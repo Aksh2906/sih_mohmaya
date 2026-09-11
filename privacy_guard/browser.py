@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from .diagnostics import logger, traced
+
 SHUTDOWN_LOCK_TIMEOUT = 2.0
+
+
+SELECTION_REJECTIONS = frozenset({"option_not_found", "option_ambiguous", "option_not_unique",
+                                  "option_disabled", "unsupported_select"})
 
 
 class BrowserError(RuntimeError):
@@ -40,37 +46,69 @@ _OBSERVE_JS = r"""function() {
   let s = globalThis.__privacyGuard;
   if (!s) {
     s = globalThis.__privacyGuard = {nonce: crypto.randomUUID(), revision: 0, serial: 0, nodes: []};
-    s.observer = new MutationObserver(() => s.revision++);
-    s.observer.observe(document.documentElement, {subtree:true, childList:true, attributes:true, characterData:true});
+    s.observers = [];
+    s.listened = new WeakSet();
     document.addEventListener('input', () => s.revision++, true);
     document.addEventListener('change', () => s.revision++, true);
     window.addEventListener('scroll', () => s.revision++, true);
     window.addEventListener('resize', () => s.revision++, true);
   }
-  if (s.observer.takeRecords().length) s.revision++;
+  if (s.observers.some(o => o.takeRecords().length)) s.revision++;
   s.serial++;
   s.nodes = [];
+  for (const observer of s.observers) observer.disconnect();
+  s.observers = [];
+  s.frames = [];
+  const roots = [document], elements = [], texts = [];
+  let unsupported_frames = 0, truncated_fields = false;
+  for (let i = 0; i < roots.length; i++) {
+    const root = roots[i];
+    const observer = new MutationObserver(() => s.revision++);
+    observer.observe(root, {subtree:true, childList:true, attributes:true, characterData:true});
+    s.observers.push(observer);
+    if (!s.listened.has(root)) {
+      root.addEventListener('input', () => s.revision++, true);
+      root.addEventListener('change', () => s.revision++, true);
+      root.addEventListener('scroll', () => s.revision++, true);
+      s.listened.add(root);
+    }
+    texts.push(root.body?.innerText || [...root.children].map(e => e.innerText || '').join('\n'));
+    for (const e of root.querySelectorAll('*')) {
+      if (elements.length >= 12000) { truncated_fields = true; break; }
+      elements.push(e);
+      if (e.shadowRoot) roots.push(e.shadowRoot);
+      if (['IFRAME', 'FRAME'].includes(e.tagName)) {
+        try {
+          const doc = e.contentDocument;
+          // Only inspect frames with the exact top-level origin.
+          if (doc && doc.location.origin === location.origin) {
+            roots.push(doc); s.frames.push({element:e, document:doc});
+          } else unsupported_frames++;
+        } catch (_) { unsupported_frames++; }
+      }
+    }
+    if (truncated_fields) break;
+  }
   const clean = x => String(x || '').replace(/\s+/g, ' ').trim();
   const visible = e => {
     const r = e.getBoundingClientRect(), c = getComputedStyle(e);
     return r.width > 0 && r.height > 0 && c.visibility !== 'hidden' && c.display !== 'none';
   };
   const fields = [];
-  let truncated_fields = false;
-  for (const e of document.querySelectorAll('input,textarea,select,button,a[href],[role="button"]')) {
+  for (const e of elements.filter(e => e.matches('input,textarea,select,button,a[href],[role="button"],[role="checkbox"],[role="radio"],[role="option"],[role="combobox"]'))) {
     if (!visible(e) || e.type === 'hidden') continue;
-    if (fields.length >= 250) { truncated_fields = true; break; }
+    if (fields.length >= 2000) { truncated_fields = true; break; }
     const r = e.getBoundingClientRect();
-    const labelled = (e.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ');
+    const labelled = (e.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => e.getRootNode().getElementById(id)?.textContent || '').join(' ');
     const label = clean(e.labels?.length ? [...e.labels].map(x => x.textContent).join(' ') : labelled || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.textContent || e.name || e.id);
     const tag = e.tagName.toLowerCase();
     const index = s.nodes.push(e);
     const inputType = String(e.type || '').toLowerCase();
     const submit = (tag === 'button' && (!inputType || inputType === 'submit')) || (tag === 'input' && ['submit','image'].includes(inputType));
     fields.push({index, label:label.slice(0,500), tag, input_type:inputType,
-      name:e.name || '', autocomplete:e.autocomplete || '',
+      id:e.id || '', name:e.name || '', autocomplete:e.autocomplete || '',
       value: inputType === 'password' ? '' : String(e.value || ''),
-      options: tag === 'select' ? [...e.options].slice(0,150).map(o => ({value:o.value,label:clean(o.textContent),disabled:o.disabled})) : [],
+      options: tag === 'select' ? [...e.options].slice(0,150).map((o, index) => ({index, value:o.value,label:clean(o.label),disabled:o.disabled || o.parentElement?.disabled === true,selected:o.selected})) : [],
       rect:{x:r.x,y:r.y,width:r.width,height:r.height},
       disabled:!!e.disabled, readonly:!!e.readOnly, required:!!e.required,
       is_submit:submit, href:tag === 'a' ? e.href : null,
@@ -79,10 +117,9 @@ _OBSERVE_JS = r"""function() {
   s.url = location.href;
   s.epoch = `${s.nonce}:${s.revision}:${s.serial}`;
   return {url:s.url,title:document.title,epoch:s.epoch,fields,
-    text:(document.body?.innerText || '').slice(0,100000),
+    text:texts.join('\n').slice(0,100000),
     width:innerWidth,height:innerHeight,device_scale_factor:devicePixelRatio,
-    unsupported_frames:document.querySelectorAll('iframe,frame').length,
-    unsupported_components:[...document.querySelectorAll('*')].some(e => e.shadowRoot || e.tagName.includes('-')),
+    unsupported_frames, unsupported_components:false,
     truncated_fields};
 }"""
 
@@ -91,7 +128,9 @@ _OBSERVE_JS = r"""function() {
 _EXECUTE_JS = r"""function(expected, action, privateValue) {
   const s = globalThis.__privacyGuard;
   if (!s) return {ok:false,error:'stale_observation'};
-  if (s.observer.takeRecords().length) s.revision++;
+  if (s.observers.some(o => o.takeRecords().length)) s.revision++;
+  if (s.frames.some(f => !f.element.isConnected || f.element.contentDocument !== f.document))
+    return {ok:false,error:'stale_observation'};
   const current = `${s.nonce}:${s.revision}:${s.serial}`;
   if (expected.epoch !== current || location.href !== expected.url || location.origin !== expected.origin)
     return {ok:false,error:'stale_observation'};
@@ -110,31 +149,57 @@ _EXECUTE_JS = r"""function(expected, action, privateValue) {
     const tag = e.tagName.toLowerCase(), type = (e.type || '').toLowerCase();
     if (!(tag === 'textarea' || (tag === 'input' && ['text','email','tel','url','search','number','date','month','week','time','datetime-local'].includes(type))))
       return {ok:false,error:'unsupported_input_type'};
-    const proto = tag === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const win = e.ownerDocument.defaultView;
+    const proto = tag === 'textarea' ? win.HTMLTextAreaElement.prototype : win.HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(e, privateValue);
-    e.dispatchEvent(new Event('input',{bubbles:true}));
-    e.dispatchEvent(new Event('change',{bubbles:true}));
+    e.dispatchEvent(new e.ownerDocument.defaultView.Event('input',{bubbles:true}));
+    e.dispatchEvent(new e.ownerDocument.defaultView.Event('change',{bubbles:true}));
     s.revision++;
     return {ok:e.value === privateValue,action:'input_ref',error:e.value === privateValue ? null : 'value_not_accepted'};
   }
-  if (action.type === 'select_ref') {
+  if (action.type === 'select_ref' || action.type === 'select_option') {
     if (e.tagName !== 'SELECT' || e.multiple) return {ok:false,error:'unsupported_select'};
-    const matches = [...e.options].filter(o => !o.disabled && (o.value === privateValue || o.textContent.trim() === privateValue));
-    if (matches.length !== 1) return {ok:false,error:'option_not_unique'};
-    e.value = matches[0].value;
-    e.dispatchEvent(new Event('input',{bubbles:true}));
-    e.dispatchEvent(new Event('change',{bubbles:true}));
+    const enabled = o => !o.disabled && o.parentElement?.disabled !== true;
+    let chosen;
+    if (action.type === 'select_option') {
+      if (!action.approved) return {ok:false,error:'approval_required'};
+      chosen = e.options[action.option_index];
+      if (!chosen) return {ok:false,error:'option_not_found'};
+      if (!enabled(chosen)) return {ok:false,error:'option_disabled'};
+    } else {
+      const options = [...e.options].filter(enabled);
+      let matches = options.filter(o => o.value === privateValue || o.label === privateValue);
+      if (!matches.length) {
+        const normalize = value => String(value).normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+        const wanted = normalize(privateValue);
+        matches = options.filter(o => normalize(o.value) === wanted || normalize(o.label) === wanted);
+      }
+      if (!matches.length) return {ok:false,error:'option_not_found'};
+      if (matches.length !== 1) return {ok:false,error:'option_ambiguous'};
+      chosen = matches[0];
+    }
+    // Values need not be unique (e.g. two PAN application types both use 49A).
+    // Assign the exact option, then verify identity after the site's handlers run.
+    const win = e.ownerDocument.defaultView;
+    Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype, 'selectedIndex').set.call(e, chosen.index);
+    e.dispatchEvent(new win.Event('input',{bubbles:true}));
+    e.dispatchEvent(new win.Event('change',{bubbles:true}));
     s.revision++;
-    return {ok:true,action:'select_ref'};
+    const accepted = e.isConnected && e.options[e.selectedIndex] === chosen;
+    return {ok:accepted,action:action.type,error:accepted ? null : 'selection_not_accepted'};
   }
   if (action.type === 'click') {
     if (!action.approved) return {ok:false,error:'approval_required'};
-    if (e.tagName === 'A' && (e.target === '_blank' || new URL(e.href).origin !== location.origin))
+    if (e.tagName === 'A' && ![location.origin, ...(action.allowed_origins || [])].includes(new URL(e.href).origin))
       return {ok:false,error:'unsupported_navigation'};
     if (e.form && new URL(e.formAction || e.form.action || location.href).origin !== location.origin)
       return {ok:false,error:'unsupported_navigation'};
-    const top = document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+    e.scrollIntoView({block:'center', inline:'center', behavior:'instant'});
+    const hitRect = e.getBoundingClientRect();
+    const top = e.getRootNode().elementFromPoint(hitRect.x+hitRect.width/2,hitRect.y+hitRect.height/2);
     if (!top || !(top === e || e.contains(top))) return {ok:false,error:'target_not_visible'};
+    // Keep links in the owned tab, including links inside supported frames.
+    if (e.tagName === 'A') e.target = '_top';
     e.click();
     s.revision++;
     return {ok:true,action:'click'};
@@ -194,6 +259,7 @@ class BrowserDriver:
                 return candidates[0]
         raise BrowserError("browser_not_installed_run_scripts_browser_install")
 
+    @traced("browser.launch")
     async def launch(self) -> dict[str, Any]:
         async with self._lock:
             if self.running:
@@ -309,9 +375,31 @@ class BrowserDriver:
                 raise BrowserError("browser_not_running")
             try:
                 page = await self._session.new_page(url)
-                return {"target_id": page._target_id, "url": url, "title": ""}
+                return await self._wait_for_ready(page._target_id)
+            except BrowserError:
+                raise
             except Exception:  # noqa: BLE001 -- replace all CDP errors with a value-free code
                 raise BrowserError("navigation_failed") from None
+
+    async def _wait_for_ready(self, target_id: str, timeout: float = 20) -> dict[str, Any]:
+        """Wait for this exact target's document, without waiting for network idle."""
+        deadline = time.monotonic() + timeout
+        previous_url = None
+        while time.monotonic() < deadline:
+            try:
+                page, context = await self._context(target_id, fresh=True)
+                state = await self._call(page, context, "function(){return {url:location.href,title:document.title,ready:document.readyState !== 'loading' && !!document.body};}")
+                _origin(state["url"])
+                if state["ready"] and state["url"] == previous_url:
+                    return {"target_id": target_id, "url": state["url"], "title": state["title"]}
+                previous_url = state["url"] if state["ready"] else None
+            except Exception:
+                # A navigation destroys execution contexts; retry attachment to
+                # the same target, never select another tab by URL or recency.
+                previous_url = None
+                self._contexts.pop(target_id, None)
+            await asyncio.sleep(0.1)
+        raise BrowserError("page_ready_timeout")
 
     async def _context(self, target_id: str, fresh: bool = False) -> tuple[Any, int]:
         if not self.running or not isinstance(target_id, str):
@@ -354,6 +442,7 @@ class BrowserDriver:
             raise BrowserError("invalid_browser_result")
         return value
 
+    @traced("browser.observe")
     async def observe(self, target_id: str, include_screenshot: bool = True) -> dict[str, Any]:
         async with self._lock:
             try:
@@ -383,11 +472,14 @@ class BrowserDriver:
                 self._contexts.pop(target_id, None)
                 raise BrowserError("observation_failed") from None
 
+    @traced("browser.agent_session")
     async def agent_session(self, target_id: str, destination: str):
         """Start Browser Use's observer/navigation watchdogs on the owned browser."""
         if not self.running:
             raise BrowserError("browser_not_running")
-        self._session.browser_profile.allowed_domains = [destination + "/*"]
+        await self._wait_for_ready(target_id)
+        # Runtime validates every destination, including redirects, before observation.
+        self._session.browser_profile.allowed_domains = None
         await self._session.start()
         await self._session.get_or_create_cdp_session(target_id, focus=True)
         return self._session
@@ -419,6 +511,24 @@ class BrowserDriver:
             except Exception:
                 raise BrowserError("stale_observation") from None
 
+    async def _check_closed_shadow_roots(self, page):
+        # Closed roots can be attached to ordinary divs as well as custom tags.
+        # They are absent from JS geometry, so never release a screenshot of them.
+        tree = await asyncio.wait_for(
+            self._session.cdp_client.send.DOM.getDocument(
+                params={"depth": -1, "pierce": True}, session_id=await page.session_id,
+            ), timeout=15,
+        )
+        nodes = [tree["root"]]
+        while nodes:
+            node = nodes.pop()
+            if node.get("shadowRootType") == "closed":
+                raise BrowserError("closed_shadow_screenshot_requires_manual_handling")
+            nodes.extend(node.get("children", []))
+            nodes.extend(node.get("shadowRoots", []))
+            if node.get("contentDocument"):
+                nodes.append(node["contentDocument"])
+
     async def capture_privacy(self, target_id: str, secrets: list[str]):
         """Pair local DOM geometry and screenshot under the same revision check."""
         from .privacy_geometry import PRIVACY_REGIONS_JS
@@ -428,7 +538,9 @@ class BrowserDriver:
                 page, context = await self._context(target_id, fresh=True)
                 raw = await self._call(page, context, _OBSERVE_JS)
                 geometry = await self._call(page, context, PRIVACY_REGIONS_JS, secrets)
+                await self._check_closed_shadow_roots(page)
                 screenshot = await asyncio.wait_for(page.screenshot(), timeout=15)
+                await self._check_closed_shadow_roots(page)
                 after_geometry = await self._call(page, context, PRIVACY_REGIONS_JS, secrets)
                 valid = await self._call(
                     page,
@@ -448,6 +560,7 @@ class BrowserDriver:
             except Exception:
                 raise BrowserError("privacy_capture_failed") from None
 
+    @traced("browser.execute")
     async def execute(
         self,
         target_id: str,
@@ -465,13 +578,11 @@ class BrowserDriver:
                     or observation.get("target_id") != target_id
                 ):
                     raise BrowserError("stale_observation")
-                if cached.get("unsupported_frames"):
-                    raise BrowserError("unsupported_embedded_frames")
                 kind = action.get("type") or action.get("action")
-                if kind not in {"input_ref", "select_ref", "click", "scroll", "wait", "done"}:
+                if kind not in {"input_ref", "select_ref", "select_option", "click", "scroll", "wait", "done"}:
                     raise BrowserError("unsupported_action")
                 safe_action: dict[str, Any] = {"type": kind}
-                if kind in {"input_ref", "select_ref", "click"}:
+                if kind in {"input_ref", "select_ref", "select_option", "click"}:
                     index = action.get("index", action.get("element_index", action.get("element_id")))
                     if (
                         not isinstance(index, int)
@@ -487,9 +598,18 @@ class BrowserDriver:
                         raise BrowserError("missing_value_reference")
                 elif resolved_value is not None:
                     raise BrowserError("unexpected_private_value")
+                if kind == "select_option":
+                    option_index = action.get("option_index")
+                    options = cached["fields"][index - 1].get("options", [])
+                    if (not isinstance(option_index, int) or isinstance(option_index, bool)
+                            or not 0 <= option_index < len(options)):
+                        raise BrowserError("option_not_found")
+                    safe_action["option_index"] = option_index
+                    safe_action["approved"] = action.get("_approved") is True
                 if kind == "click":
                     # Every click requires a coordinator-issued approval in this finite MVP.
                     safe_action["approved"] = action.get("_approved") is True
+                    safe_action["allowed_origins"] = action.get("_allowed_origins", [])
                 if kind == "scroll":
                     delta = action.get("delta_y", 500)
                     if (
@@ -511,7 +631,10 @@ class BrowserDriver:
                     resolved_value,
                 )
                 if not result.get("ok"):
-                    raise BrowserError(result.get("error", "action_failed"))
+                    code = result.get("error", "action_failed")
+                    if code in SELECTION_REJECTIONS:
+                        logger.warning("browser.selection_rejected code=%s", code)
+                    raise BrowserError(code)
                 if kind == "wait":
                     await asyncio.sleep(0.15)
                 if kind not in {"wait", "done"}:

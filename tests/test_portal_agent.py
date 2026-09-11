@@ -10,8 +10,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import httpx
 import pytest
 
-from privacy_guard.api import create_app
 from privacy_guard.agent_runtime import quiet_browser_use
+from privacy_guard.api import create_app
 from privacy_guard.browser import BrowserDriver
 from privacy_guard.config import DATA_DIR, ROOT
 from privacy_guard.models import Candidate
@@ -65,10 +65,7 @@ async def test_shipped_portal_api_document_image_review_and_resume(tmp_path, mon
             }
         else:
             raw = runtime.raw
-            nodes = runtime.agent.browser_session._cached_browser_state_summary.dom_state.selector_map
-            controls = {
-                node.attributes.get("id"): index for index, node in nodes.items() if node.attributes.get("id")
-            }
+            controls = {field["id"]: field["index"] for field in raw["fields"] if field.get("id")}
             fields = {field.get("name"): field for field in raw["fields"] if field.get("name")}
 
             def reveal_or_click(identifier, label):

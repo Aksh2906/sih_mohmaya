@@ -9,7 +9,8 @@ import socket
 import sys
 from contextlib import ExitStack, contextmanager
 
-from .config import DEMO_PORT, PORT, ROOT
+from .config import DATA_DIR, DEMO_PORT, PORT, ROOT
+from .diagnostics import configure_logging, logger
 
 
 class StartupError(RuntimeError):
@@ -86,13 +87,22 @@ async def serve():
 
 
 def main():
+    os.umask(0o077)
+    configure_logging(DATA_DIR)
     try:
+        logger.info("backend.starting api_port=%s demo_port=%s", PORT, DEMO_PORT)
         asyncio.run(serve())
     except KeyboardInterrupt:
         pass
     except StartupError as exc:
+        logger.error("backend.startup_failed", exc_info=True)
         print(f"Dev Privacy Guard could not start: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
+    except Exception:
+        logger.error("backend.failed", exc_info=True)
+        raise SystemExit(1) from None
+    finally:
+        logger.info("backend.stopped")
 
 
 if __name__ == "__main__":

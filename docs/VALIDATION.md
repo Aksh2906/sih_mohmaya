@@ -1,3 +1,11 @@
+## Website compatibility update — 9 September 2026
+
+The browser now waits for document readiness in the exact created tab and returns the resolved startup URL. The local observer supports same-origin frames and open shadow DOM; uninspectable frames no longer block unrelated controls. Native browser-state messages are replaced with sanitized local observations before model transport. New destinations require an in-app approval. Public search queries are restricted to text from the user's task.
+
+Added regression coverage exercises startup redirects, main-document/frame/shadow input filling, frame-navigation invalidation, same-tab links, exclusion of uninspectable frame text, destination approval, restricted public search input, and blocking screenshots with uninspectable closed shadow roots. Browser integration uses real Chromium with synthetic websites; agent responses are simulated. This does not establish successful live Amazon or ITR workflows. Cross-origin frame forms, closed components, CAPTCHAs, uploads and rapidly changing page layouts remain limitations.
+
+The historical results below describe earlier versions.
+
 # Version 0.1 validation
 
 Verified on 7 September 2026 in this checkout on an Apple M1 MacBook Air with 8 GB RAM and macOS 15.6.1. Only synthetic identities, documents and forms were used. No personal browser profile or paid model credential was used.

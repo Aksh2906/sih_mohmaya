@@ -149,6 +149,8 @@ def test_native_agent_has_only_guarded_tools_and_no_persistence(tmp_path, monkey
         "navigate",
         "click",
         "input_ref",
+        "search_text",
+        "select_option",
         "scroll",
         "wait",
         "visual_checkpoint",
@@ -231,20 +233,14 @@ async def test_stock_agent_navigation_ref_fill_image_review_missing_resume(tmp_p
             }
         else:
             schema = runtime.agent.AgentOutput.model_json_schema()
-            state = runtime.agent.browser_session._cached_browser_state_summary
             catalog = manager.catalog(runtime.task)
             name_ref = next(ref["id"] for ref in catalog if ref["type"] == "person_name")
             if not stages["navigated"]:
                 action = {"navigate": {"url": origin + "/form", "new_tab": False}}
                 stages["navigated"] = True
             else:
-                nodes = state.dom_state.selector_map
-                name_index = next(
-                    index for index, node in nodes.items() if node.attributes.get("id") == "full_name"
-                )
-                email_index = next(
-                    index for index, node in nodes.items() if node.attributes.get("id") == "email"
-                )
+                name_index = next(f["index"] for f in runtime.raw["fields"] if f.get("id") == "full_name")
+                email_index = next(f["index"] for f in runtime.raw["fields"] if f.get("id") == "email")
                 local_fields = runtime.raw["fields"]
                 name_field = next(
                     field
@@ -334,3 +330,151 @@ async def test_stock_agent_navigation_ref_fill_image_review_missing_resume(tmp_p
         await manager.stop_all()
         await driver.shutdown()
         server.shutdown()
+
+
+def test_native_frame_text_is_replaced_with_verified_local_controls(tmp_path):
+    runtime = runtime_stub(tmp_path)
+    runtime.raw = {
+        "url": "https://example.test/form", "title": "Form", "text": "Full name",
+        "width": 800, "height": 600, "unsupported_frames": 1,
+        "fields": [{"index": 7, "label": "Full name", "tag": "input", "input_type": "text", "value": "LOCAL_SECRET_CANARY"}],
+    }
+    payload = runtime.llm.prepare([
+        {"role": "user", "content": "native metadata <browser_state>UNINSPECTED_FRAME_SECRET</browser_state>"},
+    ], ReferenceInput, runtime.private())
+    outgoing = json.dumps(payload)
+    assert "UNINSPECTED_FRAME_SECRET" not in outgoing
+    assert "LOCAL_SECRET_CANARY" not in outgoing
+    assert 'Full name' in outgoing and 'unavailable_frames' in outgoing
+
+
+async def test_destination_change_needs_approval_and_blocks_local_services(tmp_path):
+    runtime = runtime_stub(tmp_path)
+    approvals = []
+
+    async def approve(*args):
+        approvals.append(args)
+
+    runtime.manager.approval = approve
+    runtime.check = lambda: None
+    await runtime.authorize_destination("https://another.example/form")
+    await runtime.authorize_destination("https://another.example/next")
+    assert len(approvals) == 1
+    with pytest.raises(PermissionError, match="local service"):
+        await runtime.authorize_destination("http://127.0.0.1:8765")
+    assert len(approvals) == 1
+
+
+async def test_public_search_tool_cannot_type_arbitrary_or_private_values(tmp_path, monkeypatch):
+    from privacy_guard.agent_runtime import SearchInput
+
+    quiet_browser_use()
+    import browser_use.browser.profile as profile
+    from browser_use import BrowserSession
+
+    monkeypatch.setattr(profile, "get_display_size", lambda: None)
+    runtime = runtime_stub(tmp_path)
+    runtime.task.update(_goal="Search for wireless headphones", target_id="owned")
+    runtime.raw = {"fields": [{"index": 1, "tag": "input", "input_type": "search", "label": "Search"}]}
+
+    async def check_target():
+        pass
+
+    calls = []
+
+    async def execute(*args, **kwargs):
+        calls.append((args, kwargs))
+        return {"ok": True}
+
+    runtime.check_target = check_target
+    runtime.manager.browser = SimpleNamespace(execute=execute)
+    session = BrowserSession(cdp_url="http://127.0.0.1:9222", use_cloud=False, captcha_solver=False)
+    agent = build_agent(runtime, session)
+    search = agent.tools.registry.registry.actions["search_text"].function
+    assert (await search(params=SearchInput(index=1, text="unrequested query"))).error
+    assert not calls
+    assert not (await search(params=SearchInput(index=1, text="wireless headphones"))).error
+    assert calls[0][1]["resolved_value"] == "wireless headphones"
+    runtime.manager.vault.put_record("Private phrase", "text", "wireless headphones")
+    assert (await search(params=SearchInput(index=1, text="wireless headphones"))).error
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("code", ["option_not_found", "option_ambiguous", "option_disabled"])
+async def test_dropdown_rejection_is_recoverable_before_mutation(tmp_path, code):
+    from privacy_guard.browser import BrowserError
+
+    runtime = runtime_stub(tmp_path)
+    runtime.task.update(id="test-task", step=1, status="observing", events=[], target_id="tab")
+    runtime.raw = {"url": "https://example.test/form"}
+
+    async def field(index):
+        return {"index": index, "tag": "select", "options": [{"label": "INDIVIDUAL"}]}
+
+    async def approve(*args):
+        pass
+
+    async def execute(*args, **kwargs):
+        raise BrowserError(code)
+
+    runtime.field = field
+    runtime.manager.approval = approve
+    runtime.manager.browser.execute = execute
+    result = await runtime.execute_element("select_option", 1, option_index=0)
+    assert result.error and "No option was selected" in result.error
+    assert runtime.task["status"] == "observing"
+    assert runtime.fatal is None
+
+
+async def test_dropdown_selects_observed_index_after_review(tmp_path):
+    runtime = runtime_stub(tmp_path)
+    runtime.task.update(id="test-task", step=1, status="observing", events=[], target_id="tab")
+    runtime.raw = {"url": "https://example.test/form"}
+    approvals, actions = [], []
+
+    async def field(index):
+        return {"index": index, "tag": "select", "label": "Application type", "options": [
+            {"label": "Citizen", "value": "49A"}, {"label": "Entity", "value": "49A"},
+        ]}
+
+    async def approve(*args):
+        approvals.append(args[-1])
+
+    async def execute(target, raw, action, resolved_value=None):
+        assert approvals and approvals[0]["option"] == "Entity"
+        assert "49A" not in json.dumps(approvals)
+        assert resolved_value is None
+        actions.append(action)
+        return {"ok": True}
+
+    runtime.field = field
+    runtime.manager.approval = approve
+    runtime.manager.browser.execute = execute
+    await runtime.execute_element("select_option", 1, option_index=1)
+    assert actions == [{"action": "select_option", "element_index": 1, "option_index": 1, "_approved": True}]
+    assert runtime.task["status"] == "observing"
+
+
+async def test_selection_changed_by_page_remains_uncertain(tmp_path):
+    from privacy_guard.browser import BrowserError
+
+    runtime = runtime_stub(tmp_path)
+    runtime.task.update(id="test-task", step=1, status="observing", events=[], target_id="tab")
+    runtime.raw = {"url": "https://example.test/form"}
+
+    async def field(index):
+        return {"index": index, "tag": "select", "options": [{"label": "Individual"}]}
+
+    async def approve(*args):
+        pass
+
+    async def execute(*args, **kwargs):
+        raise BrowserError("selection_not_accepted")
+
+    runtime.field = field
+    runtime.manager.approval = approve
+    runtime.manager.browser.execute = execute
+    with pytest.raises(BrowserError, match="selection_not_accepted"):
+        await runtime.execute_element("select_option", 1, option_index=0)
+    assert runtime.task["status"] == "executing"
+    assert runtime.fatal is not None

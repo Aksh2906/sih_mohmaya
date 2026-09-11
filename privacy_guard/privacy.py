@@ -255,13 +255,16 @@ def sanitize_observation(raw: dict, secrets: list[str], vision: bool = False) ->
         options = field.get("options", [])
         if isinstance(options, list):
             safe_options = []
-            for option in options[:200]:
+            for option_index, option in enumerate(options[:200]):
                 if isinstance(option, str):
                     safe_options.append(sanitize_text(option, secrets)[:1_000])
                 elif isinstance(option, dict):
                     # Display labels only; raw option values can contain identifiers.
                     safe_options.append(
-                        {"label": sanitize_text(option.get("label", option.get("text", "")), secrets)[:1_000]}
+                        {"index": option_index,
+                         "label": sanitize_text(option.get("label", option.get("text", "")), secrets)[:1_000],
+                         "disabled": bool(option.get("disabled", False)),
+                         "selected": bool(option.get("selected", False))}
                     )
             sanitized["options"] = safe_options
         fields.append(sanitized)

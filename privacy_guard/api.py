@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .audio import MAX_AUDIO_BYTES, WhisperTranscriber, audio_format
 from .config import DATA_DIR, DEMO_PORT, PORT, ROOT
+from .diagnostics import logger, request_id
 from .documents import calculate_total, extract_document
 from .gateway import ModelGateway, validate_endpoint
 from .models import (
@@ -169,28 +170,57 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
         )
         return response
 
+    @app.middleware("http")
+    async def diagnostics(request: Request, call_next):
+        identifier = secrets.token_hex(8)
+        request.state.request_id = identifier
+        token = request_id.set(identifier)
+        started = time.monotonic()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            response.headers["X-Request-ID"] = identifier
+            return response
+        except Exception:
+            logger.error("request.failed", exc_info=True)
+            raise
+        finally:
+            route = request.scope.get("route")
+            # Route templates omit private IDs; unmatched paths are never recorded.
+            path = getattr(route, "path", "<unmatched>")
+            level = 40 if status >= 500 else 30 if status >= 400 else 10 if request.method == "GET" else 20
+            logger.log(level, "request.completed method=%s route=%s status=%s duration_ms=%.1f",
+                       request.method, path, status, (time.monotonic() - started) * 1000)
+            request_id.reset(token)
+
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, exc):
+        logger.warning("request.invalid_request", exc_info=(type(exc), exc, exc.__traceback__))
         # Pydantic's default validation response includes the original private input.
         return JSONResponse({"detail": "Invalid request fields or values"}, status_code=422)
 
     @app.exception_handler(ValueError)
     async def value_error(request, exc):
+        logger.warning("request.value_error", exc_info=(type(exc), exc, exc.__traceback__))
         # Only local application ValueErrors carry user-facing safe messages.
         return JSONResponse({"detail": str(exc)}, status_code=400)
 
     @app.exception_handler(PermissionError)
     async def locked(request, exc):
+        logger.warning("request.locked", exc_info=(type(exc), exc, exc.__traceback__))
         return JSONResponse({"detail": "Unlock the local vault to continue"}, status_code=423)
 
     @app.exception_handler(KeyError)
     async def missing(request, exc):
+        logger.warning("request.missing", exc_info=(type(exc), exc, exc.__traceback__))
         return JSONResponse({"detail": "Item not found"}, status_code=404)
 
     @app.exception_handler(Exception)
     async def unexpected(request, exc):
         return JSONResponse(
-            {"detail": "The local operation failed safely. Check connection and try again."}, status_code=500
+            {"detail": "The local operation failed safely. Check connection and try again."}, status_code=500,
+            headers={"X-Request-ID": getattr(request.state, "request_id", "-")},
         )
 
     @app.get("/health")

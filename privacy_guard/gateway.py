@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .config import DEFAULT_MODEL, DEFAULT_MODEL_BASE_URL
+from .diagnostics import logger, traced
 from .models import ProposedAction
 from .privacy import contains_private_text, sanitize_text
 from .screenshots import SanitizedImageStore
@@ -209,6 +210,7 @@ class ModelGateway:
         if contains_private_text("\n".join(text_parts), secrets):
             raise ValueError("A known private value remains in the outgoing request")
 
+    @traced("gateway.call")
     async def call(self, payload: dict, approved_hash: str, secrets: list[str], mode: str) -> ProposedAction:
         if digest(payload) != approved_hash:
             raise ValueError("The model payload changed after approval")
@@ -227,6 +229,7 @@ class ModelGateway:
                 content=canonical(payload),
                 headers={"Authorization": "Bearer " + self.api_key, "Content-Type": "application/json"},
             )
+        logger.info("model.response status=%s", response.status_code)
         if response.status_code != 200:
             raise ValueError(f"Model request failed (HTTP {response.status_code}); check provider settings")
         if len(response.content) > 1_000_000:

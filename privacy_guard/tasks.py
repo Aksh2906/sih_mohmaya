@@ -8,7 +8,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from .browser import BrowserError
+from .browser import SELECTION_REJECTIONS, BrowserError
+from .diagnostics import logger, task_id
 from .gateway import ModelGateway, digest, normalize
 from .models import TaskRequest
 from .privacy import sanitize_observation, sanitize_text
@@ -37,6 +38,9 @@ class TaskManager:
         self.approval_seconds = 300
 
     def event(self, task: dict, message: str, kind="info"):
+        logger.log(40 if kind == "error" else 30 if kind == "warning" else 20,
+                   "task.event id=%s status=%s step=%s kind=%s",
+                   task.get("id", "-"), task.get("status", "-"), task.get("step", 0), kind)
         # Callers use static text or already-sanitized messages only.
         task["events"].append({"time": now(), "message": message, "kind": kind})
         task["events"] = task["events"][-100:]
@@ -323,6 +327,8 @@ class TaskManager:
         return label not in families or kind in families[label]
 
     async def run(self, task, generation):
+        token = task_id.set(task["id"])
+        logger.info("task.run.started")
         try:
             if task["mode"] == "remote":
                 from .agent_runtime import BrowserAgentRuntime
@@ -499,14 +505,22 @@ class TaskManager:
         except asyncio.CancelledError:
             raise
         except PermissionError as exc:
+            logger.warning("task.blocked", exc_info=True)
             task["status"] = "blocked"
             task["error"] = (
                 sanitize_text(str(exc), self.vault.secrets()) if self.vault.unlocked else "Vault locked."
             )
             self.event(task, task["error"], "warning")
         except Exception as exc:
+            logger.error("task.failed status=%s step=%s", task["status"], task["step"], exc_info=True)
             # Exception messages can include page values in dependencies; do not publish raw errors.
-            if task["status"] == "executing":
+            if isinstance(exc, BrowserError) and str(exc) in SELECTION_REJECTIONS:
+                task["status"] = "blocked"
+                task["error"] = (
+                    "No dropdown option was selected. The supplied reference did not identify one enabled "
+                    "option. Review the available choices and update the local record before starting a fresh task."
+                )
+            elif task["status"] == "executing":
                 task["status"] = "outcome_unknown"
                 task["error"] = (
                     "The action outcome could not be confirmed. Inspect the page; it will not be repeated automatically."
@@ -522,5 +536,7 @@ class TaskManager:
                 )
             self.event(task, task["error"], "error")
         finally:
+            logger.info("task.run.finished status=%s step=%s", task["status"], task["step"])
+            task_id.reset(token)
             task["pending"] = None
             self.persist()

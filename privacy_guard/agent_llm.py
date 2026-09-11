@@ -11,6 +11,7 @@ from copy import deepcopy
 
 import httpx
 
+from .diagnostics import logger, traced
 from .gateway import canonical, digest, validate_endpoint
 from .privacy import _safe_url, contains_private_text, sanitize_text
 
@@ -71,6 +72,11 @@ class GuardedChatModel:
                 content = "\n".join(part["text"] for part in content if part.get("type") == "text")
             if not isinstance(content, str):
                 raise ValueError("Unsupported agent message content")
+            # Native DOM can contain uninspectable frames, closed components,
+            # or values absent from our local observer. Replace the whole state
+            # message, including native metadata, rather than filtering fragments.
+            if role == "user" and "<browser_state>" in content:
+                content = "<browser_state>\n" + self.runtime.model_observation() + "\n</browser_state>"
             try:
                 structured = json.loads(content)
             except (ValueError, TypeError):
@@ -163,6 +169,7 @@ class GuardedChatModel:
         if len(canonical(payload)) > 8_000_000:
             raise ValueError("Model context exceeded the size limit")
 
+    @traced("agent_llm.send")
     async def send(self, payload, approved_hash, private, artifact=None):
         self.runtime.check()
         if digest(payload) != approved_hash:
@@ -181,11 +188,13 @@ class GuardedChatModel:
                     headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
                 )
         except httpx.TransportError:
+            logger.warning("model.transport_failed", exc_info=True)
             if self._fallback or not gateway.fallback_api_key:
                 raise
             self.runtime.check()
             return await self._send_fallback(payload, private, artifact, "Model connection failed")
         self.runtime.check()
+        logger.info("model.response status=%s", response.status_code)
         if response.status_code != 200:
             reason = f"Model request failed (HTTP {response.status_code}); check Settings"
             if response.status_code in (400, 401, 403, 404, 408, 429) or response.status_code >= 500:
@@ -214,6 +223,7 @@ class GuardedChatModel:
             metrics["image_calls"] = metrics.get("image_calls", 0) + 1
         return result
 
+    @traced("agent_llm._send_fallback")
     async def _send_fallback(self, payload, private, artifact, reason):
         gateway = self.runtime.manager.gateway
         self.runtime.check()

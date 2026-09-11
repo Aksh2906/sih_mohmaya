@@ -256,7 +256,11 @@ Verification uses synthetic data and mocked hosted responses where credentials a
 
 ## Current scope
 
-One user, one active task, one controlled Chromium tab and an authorized website. Standard accessible HTML forms are the supported starting point. Cross-origin redirects, embedded frames, login/CAPTCHA, some custom widgets, arbitrary file submission and complex tax calculations may need manual handling. Firefox, browser-local CV, local speech inference and signed installers are future work.
+One user, one active task and one controlled Chromium tab. Starting from a URL opens the page and waits for its document to become ready before binding the agent to that exact tab; startup redirects use the resolved URL. Standard HTML forms, same-origin embedded forms, and controls in open shadow DOM are supported. Links requesting a new window stay in the task tab. Moving to another website origin during a task requires an in-app destination approval.
+
+Remote mode reads locally verified field indices instead of forwarding Browser Use's native DOM text. Uninspectable frames are omitted from text context and masked in screenshots, so an unrelated iframe no longer blocks the whole page. Forms inside cross-origin frames, closed shadow DOM, login/CAPTCHA, some custom widgets, arbitrary file submission and complex tax calculations still need manual handling. Observations remain bounded to 12,000 DOM elements and 2,000 controls; rapidly changing pages can require fresh observations.
+
+For browsing, give a specific public search phrase, for example: “Search for wireless headphones on this website and open a relevant product.” The `search_text` tool can enter a phrase from the task into a search box. Personal form values still use selected, reviewed records. Search/Next/Continue controls can proceed through the existing click review; final purchases and form submissions remain withheld by default. These capabilities are verified with synthetic Chromium fixtures, not a claim of universal Amazon or ITR portal compatibility. Firefox, browser-local CV, local speech inference and signed installers are future work.
 
 The project reuses the MIT-licensed [Browser Use repository](https://github.com/browser-use/browser-use); its navigation and reasoning loop are upstream capabilities. The contribution here is the supervision, privacy gateway, local facts and document workflow. The audio integration follows the [OpenAI transcription API](https://developers.openai.com/api/docs/guides/speech-to-text).
 
@@ -267,3 +271,50 @@ The [original implementation plan](IMPLEMENTATION_PLAN.md) is historical. The [v
 Gemini 2.5 Flash remains the primary model. In Settings, save a separate OpenAI key under **Optional fallback · OpenAI** (default model: `gpt-4.1-mini`). Without that key, no fallback is attempted. A remote agent task switches once to OpenAI after a connection failure or HTTP 400/401/403/404/408/429/5xx. It stays on OpenAI for the rest of that task; new tasks begin with Gemini. Redirects, privacy-check failures and invalid model output do not trigger fallback.
 
 Text review, when enabled, is repeated for the changed destination. Images always require fresh review for OpenAI, including any updated masks. Keys stay encrypted locally and the Whisper key is never reused automatically. Restart the companion after updating the code, then save the keys in the unlocked Settings page.
+
+### Backend diagnostic logs
+
+Start the backend normally with `./scripts/start.sh`. It writes JSON logs to the
+terminal and `$GUARD_DATA_DIR/logs/backend.log` (default:
+`~/Library/Application Support/Dev Privacy Guard/logs/backend.log`). Files rotate
+at 5 MB, retaining three backups. Restart the backend after changing logging settings.
+
+```bash
+# Include successful GET requests, such as dashboard polling:
+GUARD_LOG_LEVEL=DEBUG ./scripts/start.sh
+
+# Watch the default log location:
+tail -f "$HOME/Library/Application Support/Dev Privacy Guard/logs/backend.log"
+```
+
+The default level is `INFO`; `WARNING`, `ERROR`, and `CRITICAL` are also supported.
+Use the response's `X-Request-ID` header to find matching API logs. Background
+operations include a task ID; browser and model operations record timings,
+provider HTTP status, fallback attempts, and failures. Successful GET requests
+are logged only at `DEBUG` to keep polling noise low.
+
+Errors include exception types and stack file/function/line locations. Logs omit
+exception messages, source lines, local variables, request bodies, headers,
+query strings, page content, and model payloads to protect vault data and keys.
+Task events record status and step metadata; their text remains in the dashboard.
+Third-party verbose logging remains disabled. Logging is configured by the normal
+backend entry point (`privacy-guard` or `python -m privacy_guard.main`).
+
+### Dropdown compatibility
+
+Native single-choice dropdowns support private-reference matching by option value
+or label, with a fallback for capitalization and whitespace differences. When
+several options share a value (as on the Protean PAN application form), the agent
+can use `select_option` with the exact observed option index. The dashboard asks
+you to review that choice before applying it. Unknown personal choices still need
+user input; the agent must not guess them.
+
+A missing or ambiguous match leaves the control unchanged and lets the agent
+inspect fresh options or request help. It no longer reports an uncertain action
+for that rejection. Disabled options and disabled option groups are excluded;
+selection is verified after input/change handlers run. Custom dropdowns use the
+existing visible-control click workflow. This improves compatibility across
+forms, but does not guarantee every website: inaccessible controls, login/CAPTCHA,
+file-upload requirements and unsupported widgets may still need manual help.
+After updating, restart the backend and start a fresh task for an already-ended
+`option_not_unique` failure.
