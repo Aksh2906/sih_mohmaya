@@ -125,10 +125,10 @@ async def smoke(
                     json.dumps(
                         {
                             "manifest_version": 3,
-                            "name": "Privacy Guard smoke test",
+                            "name": "Veil smoke test",
                             "version": "0.0.1",
                             "permissions": ["activeTab"],
-                            "action": {"default_title": "Privacy Guard"},
+                            "action": {"default_title": "Veil"},
                         }
                     )
                 )

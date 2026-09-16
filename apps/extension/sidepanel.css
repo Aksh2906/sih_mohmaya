@@ -704,3 +704,10 @@ footer {
 #resume-information {
   margin-bottom: 22px;
 }
+
+.language-picker {display:flex;align-items:center;gap:8px;padding:8px 20px;font-size:12px;}
+.language-picker select {width:auto;padding:4px;margin:0;}
+#task-brief-text {white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;}
+
+.action-summary {padding:14px; margin:12px 0; border:1px solid #92b5a7; border-radius:10px; overflow-wrap:anywhere;}
+.action-summary strong {font-size:17px;}

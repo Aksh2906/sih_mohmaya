@@ -108,8 +108,8 @@ def dashboard(chromium):
         elif path == "/audio/transcribe":
             payload = {
                 "text": "Fill the fictional application at https://example.test",
-                "provider": "OpenAI",
-                "model": "whisper-1",
+                "provider": "Local",
+                "model": "faster-whisper-small",
             }
         else:
             payload = {}
@@ -130,7 +130,7 @@ def test_task_can_start_without_existing_tab(dashboard):
         "Go to https://example.test and fill the application"
     )
     expect(dialog.get_by_role("checkbox", name="Full name profile")).to_be_checked()
-    expect(dialog.get_by_role("checkbox", name="Visual checkpoints")).to_be_checked()
+    expect(dialog.get_by_role("checkbox", name="Redacted images at every planning step")).to_be_checked()
     expect(dialog.get_by_role("checkbox", name="Stop before final submission")).to_be_checked()
     capture(page, "new-task-test-fixture.png")
     dialog.get_by_role("button", name="Start task", exact=True).click()
@@ -138,7 +138,30 @@ def test_task_can_start_without_existing_tab(dashboard):
     body = next(body for path, body in calls if path == "/tasks")
     assert "target_id" not in body and "start_url" not in body
     assert body["vision"] is True and body["stop_before_submit"] is True
+    assert body["image_review"] == "sensitive"
     assert body["review_text"] is False and body["mode"] == "remote"
+
+
+def test_login_handoff_continues_same_task_without_replacing_vault_selection(dashboard):
+    page, url, state, calls, _ = dashboard
+    state["task"] = {
+        "id": "login-task", "goal": "Open the Download Aadhaar page", "status": "waiting_input",
+        "step": 3, "events": [], "result": "Sign in directly in the controlled browser.",
+        "human_action": {"kind": "login", "message": "Sign in", "target_id": "same-tab"},
+        "plan": [{"title": "Open the download service", "success_criteria": "Download heading is visible",
+                  "status": "in_progress", "source_ids": [1]}],
+        "sources": [{"id": 1, "title": "Official help", "url": "https://example.test/help", "note": "Service route"}],
+    }
+    page.goto(url + "/#page=activity&task=login-task")
+    expect(page.get_by_role("heading", name="Task plan", exact=True)).to_be_visible()
+    expect(page.get_by_text("Your browser action is needed", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Add details", exact=True)).not_to_be_visible()
+    page.get_by_text("Sources consulted", exact=True).click()
+    expect(page.get_by_role("link", name="Official help")).to_have_attribute("href", "https://example.test/help")
+    capture(page, "login-handoff-test-fixture.png")
+    page.get_by_role("button", name="I've finished — continue", exact=True).click()
+    assert next(body for path, body in calls if path == "/tasks/login-task/control") == {"action": "resume"}
+    expect(page.get_by_role("dialog")).not_to_be_visible()
 
 
 def test_voice_requires_send_and_only_updates_draft(dashboard):
@@ -150,10 +173,10 @@ def test_voice_requires_send_and_only_updates_draft(dashboard):
     # Wait for native MediaRecorder to accumulate a synthetic audio sample.
     page.wait_for_timeout(300)
     dialog.get_by_role("button", name="Stop recording", exact=True).click()
-    dialog.get_by_role("button", name="Transcribe with Whisper", exact=True).wait_for()
+    dialog.get_by_role("button", name="Transcribe locally", exact=True).wait_for()
     page.wait_for_function("document.querySelector('.voice-input audio')?.readyState >= 1")
     assert not any(path in ("/audio/transcribe", "/tasks") for path, _ in calls)
-    dialog.get_by_role("button", name="Transcribe with Whisper", exact=True).click()
+    dialog.get_by_role("button", name="Transcribe locally", exact=True).click()
     expect(dialog.get_by_role("textbox", name="Task", exact=True)).to_have_value(
         "Fill the fictional application at https://example.test"
     )
@@ -175,7 +198,8 @@ def png(mask=None):
     return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
 
 
-def test_visual_masks_use_image_coordinates_and_refresh_approval(dashboard):
+@pytest.mark.parametrize("recovery", [False, True])
+def test_visual_masks_use_image_coordinates_and_refresh_approval(dashboard, recovery):
     page, url, state, calls, custom = dashboard
     task = {
         "id": "visual-task",
@@ -205,7 +229,8 @@ def test_visual_masks_use_image_coordinates_and_refresh_approval(dashboard):
         "redacted": png(),
         "width": 640,
         "height": 360,
-        "report": {"method": "synthetic test fixture"},
+        "report": {"method": "synthetic test fixture", "requires_manual_review": recovery,
+                   "recovery_reasons": ["Generated CSS media needs manual handling."]},
     }
     custom["/tasks/visual-task/image-preview"] = lambda _: preview
 
@@ -220,6 +245,10 @@ def test_visual_masks_use_image_coordinates_and_refresh_approval(dashboard):
     page.goto(url + "/#page=activity&task=visual-task")
     approve = page.get_by_role("button", name="Approve image & continue")
     expect(approve).to_be_enabled()
+    if recovery:
+        expect(page.get_by_text("Automatic privacy checks need your review", exact=True)).to_be_visible()
+        expect(page.get_by_text("Generated CSS media needs manual handling.", exact=True)).to_be_visible()
+        assert not any(path.endswith("/approve") for path, _ in calls)
     page.get_by_text("Outgoing text, destination & request hash", exact=True).click()
     request_details = page.locator("details").filter(
         has=page.get_by_text("Outgoing text, destination & request hash", exact=True)
@@ -286,3 +315,35 @@ def test_portal_requires_details_and_stops_at_review(chromium):
         context.close()
         server.shutdown()
         server.server_close()
+
+
+def test_hindi_interface_preserves_draft_and_passes_language(dashboard):
+    page,url,state,calls,_=dashboard
+    page.goto(url+"/#page=activity&new=1")
+    dialog=page.get_by_role("dialog")
+    draft="मेरा आधार डाउनलोड करें"
+    dialog.get_by_role("textbox",name="Task",exact=True).fill(draft)
+    page.get_by_label("Language / भाषा").select_option("hi")
+    expect(dialog.get_by_role("textbox",name="कार्य",exact=True)).to_have_value(draft)
+    expect(dialog.get_by_role("button",name="कार्य शुरू करें",exact=True)).to_be_visible()
+    expect(page.get_by_role("navigation")).to_contain_text("निजी वॉल्ट")
+    dialog.get_by_role("button",name="कार्य शुरू करें",exact=True).click()
+    page.wait_for_timeout(200)
+    body=next(body for path,body in calls if path=="/tasks")
+    assert body["goal"]==draft and body["language"]=="hi" and body["vision"] is True
+
+
+def test_click_approval_is_readable_with_collapsed_technical_details(dashboard):
+    page,url,state,calls,_=dashboard
+    state["task"]={"id":"click-task","goal":"Open the download page","status":"awaiting_approval","step":1,"events":[],
+                   "pending":{"id":"click-approval","kind":"submit","title":"Click “Download Aadhaar”?",
+                              "payload":{"control":"Download Aadhaar","destination":"https://example.test"},
+                              "summary":{"action":"Click “Download Aadhaar”.","destination":"https://example.test","detail":"Check the button and website before continuing."}}}
+    page.goto(url+"/#page=activity")
+    expect(page.locator('.action-summary')).to_contain_text('Click “Download Aadhaar”.')
+    expect(page.locator('.action-summary')).to_contain_text('https://example.test')
+    details=page.locator('.approval-card details')
+    expect(details).not_to_have_attribute('open','')
+    expect(details.locator('pre')).not_to_be_visible()
+    details.locator('summary').click()
+    expect(details.locator('pre')).to_contain_text('"control": "Download Aadhaar"')

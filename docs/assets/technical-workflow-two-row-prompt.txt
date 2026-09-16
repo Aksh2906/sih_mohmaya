@@ -1,0 +1,54 @@
+Mode: built-in image_gen
+
+Use case: infographic-diagram.
+Generate a polished presentation-ready technical flowchart for DEV PRIVACY GUARD, intended full product architecture. Landscape 16:9, high resolution, white background. Title "Technical Workflow", small subtitle "DEV PRIVACY GUARD · TARGET ARCHITECTURE".
+EXACTLY FOUR large module cards arranged in EXACTLY TWO ROWS and TWO COLUMNS. Linear reading order as a clean snake: card 01 top left -> card 02 top right -> card 03 bottom right -> card 04 bottom left. Draw precisely three connectors: right arrow 01 to 02, down arrow 02 to 03 in the right-side row gap, left arrow 03 to 04. NO loops, branches, diamonds, additional boxes, extra rows or crossed connectors. Place small 01–04 badges so order is unambiguous. Four cards equal size, wide enough for clear bullets, generous gutters and margins.
+
+Style: attractive but subtle professional infographic, crisp dark navy sans-serif, bold card headings, readable left-aligned bullet points, simple small outline icon in each card header, thin colored borders, softly rounded corners, extremely light shadows. Muted pastel blue card 01, mint card 02, lavender card 03, warm pale peach card 04. Clean hierarchy; no saturated backgrounds, no 3D, no decorative clutter. Layout optimized for text readability at slide scale.
+
+Render these exact headings and exact bullet texts inside the cards. Use separate bold header band and 5 bullet points per card. Allow line wraps without clipping. Don't display the instructions or internal layout descriptions.
+
+TOP LEFT CARD:
+Heading: "Profile Vault"
+Bullets:
+"Encrypted SQLite · AES-GCM"
+"Local document parsing + OCR"
+"User-reviewed, versioned facts"
+"Task-scoped private-value references"
+"Raw values remain on the device"
+Small database + lock outline icon.
+
+TOP RIGHT CARD:
+Heading: "Start Task"
+Bullets:
+"MV3 extension · React / TypeScript"
+"FastAPI companion + Browser Use"
+"Goal + URL + approved references"
+"Bind browser tab · capture DOM / ARIA"
+"Track page changes + local cache"
+Small browser window with play outline icon.
+
+BOTTOM RIGHT CARD:
+Heading: "Redaction Engine"
+Bullets:
+"DOM rules + known-value / PII matching"
+"Local CV + OCR + face detection"
+"ONNX Runtime Web · WebGPU / WASM"
+"Merge detections · mask pixels + text"
+"HITL review · approve exact payload"
+Small shield + eye outline icon.
+
+BOTTOM LEFT CARD:
+Heading: "LLM Action for Agent"
+Bullets:
+"Self-hosted LLM / VLM reasoning server"
+"Sanitized context → structured actions"
+"Local checks: target, state, permissions"
+"Resolve references locally · execute via CDP"
+"Final approval for submit / pay"
+Small server-rack + cursor outline icon.
+
+Label the arrow from Start Task down to Redaction Engine "Local observation". Label the arrow from Redaction Engine left to LLM Action for Agent "Approved sanitized context". Label the top horizontal arrow "Reference IDs". Labels small but readable, no overlaps.
+
+Small unobtrusive footer text, not inside a fifth box: "Private values are resolved locally and disclosed only to the authorized website."
+This is a planned technical architecture; no claim of measured performance. No API key wording, no commercial hosted LLM provider logos. Preserve exact spelling, legibility and the 2-row, 4-card linear layout.

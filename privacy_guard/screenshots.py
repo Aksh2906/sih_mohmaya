@@ -18,7 +18,7 @@ from uuid import uuid4
 
 from PIL import Image, ImageDraw
 
-from .privacy_geometry import finite_number, pixel_rect
+from .privacy_geometry import PRIVACY_FAILURES, finite_number, pixel_rect, privacy_failure_codes
 
 PNG_PREFIX = "data:image/png;base64,"
 MAX_IMAGE_BYTES = 24 * 1024 * 1024
@@ -142,6 +142,21 @@ class SanitizedImageStore:
     def create(self, raw_base64: str, geometry: dict, extra_masks: list[dict] | None = None) -> dict:
         if not isinstance(geometry, dict) or geometry.get("complete") is not True:
             raise ValueError("Screenshot privacy collection is incomplete; image sending is blocked.")
+        return self._create(raw_base64, geometry, extra_masks)
+
+    def create_for_manual_review(self, raw_base64: str, geometry: dict) -> dict:
+        """Local review candidate, never eligible for automatic image approval.
+
+        Validate pixel/viewport alignment even when detection is incomplete. Human
+        masks use this immutable PNG's native pixels, not live DOM coordinates.
+        """
+        if not isinstance(geometry, dict) or geometry.get("complete") is not False:
+            raise ValueError("Manual recovery requires an incomplete privacy scan.")
+        if "invalid_geometry" in privacy_failure_codes(geometry):
+            raise ValueError("Invalid privacy geometry; adjust the browser and retry.")
+        return self._create(raw_base64, geometry, manual_review=True)
+
+    def _create(self, raw_base64, geometry, extra_masks=None, *, manual_review=False):
         if geometry.get("coordinate_space", "viewport-css") != "viewport-css":
             raise ValueError("Unsupported screenshot coordinate space.")
         viewport = geometry.get("viewport")
@@ -170,6 +185,7 @@ class SanitizedImageStore:
             masks = []
             reasons = {
                 "password_field",
+                "empty_private_field",
                 "populated_field",
                 "embedded_frame",
                 "uninspected_media",
@@ -214,10 +230,19 @@ class SanitizedImageStore:
                 "geometry_validated": True,
                 "metadata_stripped": True,
                 "warnings": [
-                    "Unknown personal text may be missed. Inspect the exact image before approving each upload.",
+                    "Unknown personal text may be missed. Enable Review every image to inspect every upload.",
                     "Media and embedded frames are masked conservatively; no screenshot OCR or face detection model is used.",
                 ],
             }
+            if manual_review:
+                codes = privacy_failure_codes(geometry)
+                report.update(
+                    mode="manual_recovery", requires_manual_review=True,
+                    automatic_scan_complete=False, recovery_codes=codes,
+                    recovery_reasons=[next((message for message, code in PRIVACY_FAILURES.items() if code == c),
+                                           "Automatic privacy checks were incomplete.") for c in codes],
+                )
+                report["warnings"].insert(0, "Automatic privacy checks were incomplete. Inspect the whole screenshot and cover all private information before approving.")
             return self._save(image, report)
 
     def get(self, artifact_id: str) -> dict:

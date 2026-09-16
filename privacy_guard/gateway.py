@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from .config import DEFAULT_MODEL, DEFAULT_MODEL_BASE_URL
+from .config import DEFAULT_FALLBACK_MODEL, DEFAULT_MODEL, DEFAULT_MODEL_BASE_URL
 from .diagnostics import logger, traced
 from .models import ProposedAction
 from .privacy import contains_private_text, sanitize_text
@@ -72,10 +72,26 @@ class ModelGateway:
         self.model = DEFAULT_MODEL
         self.base_url = DEFAULT_MODEL_BASE_URL
         self.api_key = ""
-        self.fallback_model = "gpt-4.1-mini"
+        self.fallback_model = DEFAULT_FALLBACK_MODEL
         self.fallback_api_key = ""
         self.sent: list[dict] = []
         self.image_store = SanitizedImageStore()
+
+    @property
+    def api_key(self):
+        return self.api_keys[0] if self.api_keys else ""
+
+    @api_key.setter
+    def api_key(self, value):
+        self.api_keys = [value] if value else []
+
+    @property
+    def fallback_api_key(self):
+        return self.fallback_api_keys[0] if self.fallback_api_keys else ""
+
+    @fallback_api_key.setter
+    def fallback_api_key(self, value):
+        self.fallback_api_keys = [value] if value else []
 
     def settings(self) -> dict:
         return {
@@ -83,6 +99,8 @@ class ModelGateway:
             "model": self.model,
             "base_url": self.base_url,
             "configured": bool(self.api_key and self.model),
+            "key_count": len(self.api_keys),
+            "fallback_key_count": len(self.fallback_api_keys),
             "fallback_model": self.fallback_model,
             "fallback_configured": bool(self.fallback_api_key and self.fallback_model),
         }
@@ -90,7 +108,7 @@ class ModelGateway:
     def prepare(
         self, goal: str, observation: dict, references: list[dict], history: list[dict], secrets: list[str]
     ) -> dict:
-        secrets = list(secrets) + ([self.api_key] if self.api_key else [])
+        secrets = list(secrets) + self.api_keys + self.fallback_api_keys
         # Construct an allowlisted presentation; never serialize raw browser objects.
         fields = []
         for field in observation.get("fields", [])[:200]:
@@ -172,7 +190,8 @@ class ModelGateway:
             if isinstance(message["content"], str):
                 if position != 0 or message["content"] != SYSTEM:
                     raise ValueError("Unexpected system content")
-                text_parts.append(message["content"])
+                # Exact local instructions are already authenticated above;
+                # a coinciding vault value does not turn them into user data.
                 continue
             if (
                 position != 1

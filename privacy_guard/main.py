@@ -96,7 +96,7 @@ def main():
         pass
     except StartupError as exc:
         logger.error("backend.startup_failed", exc_info=True)
-        print(f"Dev Privacy Guard could not start: {exc}", file=sys.stderr)
+        print(f"Veil could not start: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
     except Exception:
         logger.error("backend.failed", exc_info=True)

@@ -1,3 +1,4 @@
+import { t, useLocale, getLanguage } from "./i18n";
 import {
   useCallback,
   useEffect,
@@ -56,16 +57,26 @@ type Task = {
   status: string;
   step: number;
   goal: string;
+  brief?: string;
   events?: Array<{ time: string; message: string; kind: string }>;
   pending?: {
     id: string;
     kind: string;
     title: string;
     payload: unknown;
+    summary?: { action: string; destination: string; detail: string };
   } | null;
   request?: unknown;
   error?: string;
   result?: unknown;
+  human_action?: { kind: string; message: string; target_id?: string } | null;
+  plan?: Array<{
+    title: string;
+    success_criteria: string;
+    status: string;
+    source_ids: number[];
+  }>;
+  sources?: Array<{ id: number; title: string; url: string; note: string }>;
 };
 type Status = {
   vault: { initialized: boolean; unlocked: boolean };
@@ -115,6 +126,8 @@ const fieldTypes = [
   ["bank_account", "Bank account"],
   ["ifsc", "IFSC"],
   ["aadhaar", "Aadhaar"],
+  ["username", "Username"],
+  ["password", "Password"],
   ["postal_code", "Postal code"],
   ["date", "Date"],
   ["text", "Other text"],
@@ -126,7 +139,7 @@ const terminalStates = [
   "blocked",
   "outcome_unknown",
 ];
-const formatStatus = (s: string) => s.replaceAll("_", " ");
+const formatStatus = (s: string) => t(s.replaceAll("_", " "));
 const formatScope = (scope?: string) =>
   scope?.startsWith("document:")
     ? "Document · " + scope.slice(-6)
@@ -145,10 +158,7 @@ function Brand() {
       <span className="brand-mark">
         <Fingerprint size={25} />
       </span>
-      <div>
-        dev<span className="brand-dot">.</span>
-        <span className="brand-secondary">privacy guard</span>
-      </div>
+      <div>{t("Veil")}</div>
     </div>
   );
 }
@@ -188,7 +198,7 @@ function Empty({
     <div className="empty">
       <span className="empty-icon">{icon}</span>
       <h3>{title}</h3>
-      <p>{detail}</p>
+      <p>{t(detail)}</p>
       {children}
     </div>
   );
@@ -208,6 +218,7 @@ function Pill({
   );
 }
 function App() {
+  useLocale();
   const [paired, setPaired] = useState(!!getToken()),
     [status, setStatus] = useState<Status | null>(null),
     [page, setPage] = useState<Page>(() => {
@@ -368,9 +379,10 @@ function App() {
       <aside className="sidebar">
         <Brand />
         <div className="workspace-label">
-          YOUR WORKSPACE <span>LOCAL</span>
+          {t("YOUR WORKSPACE")}
+          <span>{t("LOCAL")}</span>
         </div>
-        <nav aria-label="Main navigation">
+        <nav aria-label={t("Main navigation")}>
           {(
             [
               { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -381,12 +393,12 @@ function App() {
           ).map((n) => (
             <button
               key={n.id}
-              aria-label={n.label}
+              aria-label={t(n.label)}
               className={"nav-item " + (page === n.id ? "active" : "")}
               onClick={() => navigate(n.id)}
             >
               <n.icon size={19} />
-              <span>{n.label}</span>
+              <span>{t(n.label)}</span>
               {n.id === "activity" && activeTask ? (
                 <span className="notification-dot" />
               ) : null}
@@ -397,13 +409,15 @@ function App() {
         <div className="sidebar-bottom">
           <div className="local-note">
             <ShieldCheck size={21} />
-            <strong>A private place to work.</strong>
+            <strong>{t("A private place to work.")}</strong>
             <p>
-              Your vault lives on this device. You control every disclosure.
+              {t(
+                "Your vault lives on this device. You control every disclosure.",
+              )}
             </p>
             <span>
               <span className={"status-dot " + (online ? "" : "offline")} />
-              {online ? "Local companion connected" : "Companion offline"}
+              {online ? t("Local companion connected") : t("Companion offline")}
             </span>
           </div>
           <button
@@ -411,17 +425,17 @@ function App() {
             onClick={() => navigate("settings")}
           >
             <Settings2 size={18} />
-            Connection & settings
+            {t("Connection & settings")}
           </button>
           <div className="sidebar-footer">
-            <span className="avatar">ME</span>
+            <span className="avatar">{t("ME")}</span>
             <div>
-              <strong>Personal workspace</strong>
-              <small>On this device</small>
+              <strong>{t("Personal workspace")}</strong>
+              <small>{t("On this device")}</small>
             </div>
             <button
-              aria-label="Lock vault"
-              title="Lock vault"
+              aria-label={t("Lock vault")}
+              title={t("Lock vault")}
               onClick={() => void act("lock", () => post("/vault/lock"))}
             >
               <LockKeyhole size={17} />
@@ -432,25 +446,26 @@ function App() {
       <main>
         <header className="topbar">
           <div className="breadcrumb">
-            Workspace <ChevronRight size={13} />
+            {t("Workspace")}
+            <ChevronRight size={13} />
             <span>
-              {
+              {t(
                 {
                   overview: "Overview",
                   vault: "Personal vault",
                   documents: "Documents",
                   activity: "Task activity",
                   settings: "Connection & settings",
-                }[page]
-              }
+                }[page],
+              )}
             </span>
           </div>
           <div className="topbar-right">
             <Pill tone={online ? "green" : "amber"}>
-              {online ? "Runs locally" : "Offline"}
+              {online ? t("Runs locally") : t("Offline")}
             </Pill>
             <span className="topbar-divider" />
-            <span className="version">PROTOTYPE / 02</span>
+            <span className="version">{t("PROTOTYPE / 02")}</span>
           </div>
         </header>
         <div className="content">
@@ -458,20 +473,25 @@ function App() {
             <div className="alert">
               <AlertCircle size={17} />
               <div>
-                <strong>Local companion is unavailable.</strong> Start it in
-                your terminal, then this workspace will reconnect automatically.
+                <strong>{t("Local companion is unavailable.")}</strong>
+                {t(
+                  "Start it in your terminal, then this workspace will reconnect automatically.",
+                )}
               </div>
               <Button className="small" onClick={() => void load(true)}>
                 <RefreshCw size={14} />
-                Retry
+                {t("Retry")}
               </Button>
             </div>
           )}
           {error && (
             <div className="alert error" role="alert">
               <AlertCircle size={18} />
-              <span>{error}</span>
-              <button aria-label="Dismiss error" onClick={() => setError("")}>
+              <span>{t(error)}</span>
+              <button
+                aria-label={t("Dismiss error")}
+                onClick={() => setError("")}
+              >
                 <X size={16} />
               </button>
             </div>
@@ -479,7 +499,7 @@ function App() {
           {!status ? (
             <div className="loading">
               <LoaderCircle className="spin" />
-              Connecting to your local workspace…
+              {t("Connecting to your local workspace…")}
             </div>
           ) : !status.vault.unlocked ? (
             <VaultGate
@@ -536,11 +556,13 @@ function App() {
         </div>
         <footer className="main-footer">
           <span>
-            <ShieldCheck size={13} /> Your data. Your device. Your decision.
+            <ShieldCheck size={13} />
+            {t("Your data. Your device. Your decision.")}
           </span>
           <span>
-            DEV PRIVACY GUARD <span className="footer-sep">/</span> LOCAL
-            WORKSPACE
+            {t("VEIL")}
+            <span className="footer-sep">/</span>
+            {t("LOCAL WORKSPACE")}
           </span>
         </footer>
       </main>
@@ -590,51 +612,52 @@ function Pairing({ onPaired }: { onPaired: () => void }) {
     <div className="onboarding">
       <div className="onboarding-brand">
         <Brand />
-        <Pill tone="green">Local workspace</Pill>
+        <Pill tone="green">{t("Local workspace")}</Pill>
       </div>
       <div className="pair-grid">
         <section className="pair-story">
-          <span className="eyebrow">PRIVATE BY DESIGN</span>
+          <span className="eyebrow">{t("PRIVATE BY DESIGN")}</span>
           <h1>
-            Let the agent work.
+            {t("Let the agent work.")}
             <br />
-            <em>Keep your data close.</em>
+            <em>{t("Keep your data close.")}</em>
           </h1>
           <p>
-            A browser assistant with a vault on your device. Share references
-            with the model. Reveal real details only where you choose.
+            {t(
+              "A browser assistant with a vault on your device. Share references with the model. Reveal real details only where you choose.",
+            )}
           </p>
           <div className="privacy-diagram">
             <div>
               <Database size={24} />
-              <strong>Your local vault</strong>
-              <small>Real information</small>
+              <strong>{t("Your local vault")}</strong>
+              <small>{t("Real information")}</small>
             </div>
             <span className="diagram-line">→</span>
             <div className="diagram-model">
               <Sparkles size={24} />
-              <strong>AI reasoning</strong>
-              <small>Private references</small>
+              <strong>{t("AI reasoning")}</strong>
+              <small>{t("Private references")}</small>
             </div>
             <span className="diagram-line">→</span>
             <div>
               <Globe2 size={24} />
-              <strong>Your browser</strong>
-              <small>Approved actions</small>
+              <strong>{t("Your browser")}</strong>
+              <small>{t("Approved actions")}</small>
             </div>
           </div>
           <div className="pair-features">
             <span>
               <Check size={16} />
-              Local document extraction
+              {t("Local document extraction")}
             </span>
             <span>
               <Check size={16} />
-              Review before disclosure
+              {t("Review before disclosure")}
             </span>
             <span>
               <Check size={16} />
-              You stay in control
+              {t("You stay in control")}
             </span>
           </div>
         </section>
@@ -642,19 +665,20 @@ function Pairing({ onPaired }: { onPaired: () => void }) {
           <span className="large-icon">
             <KeyRound size={28} />
           </span>
-          <span className="eyebrow">CONNECT THIS WORKSPACE</span>
-          <h2>A quick, local handshake.</h2>
+          <span className="eyebrow">{t("CONNECT THIS WORKSPACE")}</span>
+          <h2>{t("A quick, local handshake.")}</h2>
           <p>
-            Enter the pairing code printed by the companion in your terminal.
-            This authorizes this dashboard on your device.
+            {t(
+              "Enter the pairing code printed by the companion in your terminal. This authorizes this dashboard on your device.",
+            )}
           </p>
           <form onSubmit={pair}>
-            <label htmlFor="pair-code">Pairing code</label>
+            <label htmlFor="pair-code">{t("Pairing code")}</label>
             <input
               id="pair-code"
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="Enter terminal pairing code"
+              placeholder={t("Enter terminal pairing code")}
               autoComplete="off"
               spellCheck={false}
               required
@@ -666,25 +690,27 @@ function Pairing({ onPaired }: { onPaired: () => void }) {
               </div>
             )}
             <Button className="primary full" busy={busy} type="submit">
-              Connect workspace <ArrowRight size={17} />
+              {t("Connect workspace")}
+              <ArrowRight size={17} />
             </Button>
           </form>
           <div className="hint">
             <Terminal size={17} />
             <span>
-              Start the companion using the project’s setup instructions. Keep
-              it running while you work.
+              {t(
+                "Start the companion using the project’s setup instructions. Keep it running while you work.",
+              )}
             </span>
           </div>
           <div className="pair-card-footer">
             <LockKeyhole size={13} />
-            Session credentials stay in this browser session.
+            {t("Session credentials stay in this browser session.")}
           </div>
         </section>
       </div>
       <div className="onboarding-footer">
-        DEV PRIVACY GUARD{" "}
-        <span>Local companion · Browser Use · Your approval</span>
+        {t("VEIL")}{" "}
+        <span>{t("Local companion · Browser Use · Your approval")}</span>
       </div>
     </div>
   );
@@ -710,16 +736,20 @@ function VaultGate({
         <span className="orbit orbit-one" />
         <span className="orbit orbit-two" />
       </div>
-      <Pill tone="green">STORED ON THIS DEVICE</Pill>
+      <Pill tone="green">{t("STORED ON THIS DEVICE")}</Pill>
       <h1>
         {initialized
-          ? "Welcome back to your vault."
-          : "Your private workspace starts here."}
+          ? t("Welcome back to your vault.")
+          : t("Your private workspace starts here.")}
       </h1>
       <p>
         {initialized
-          ? "Unlock your vault to access saved information and continue your work."
-          : "Create a passphrase to encrypt your personal details and documents locally."}
+          ? t(
+              "Unlock your vault to access saved information and continue your work.",
+            )
+          : t(
+              "Create a passphrase to encrypt your personal details and documents locally.",
+            )}
       </p>
       <form
         onSubmit={(e) => {
@@ -736,7 +766,7 @@ function VaultGate({
         }}
       >
         <label htmlFor="vault-pass">
-          {initialized ? "Vault passphrase" : "Create a passphrase"}
+          {initialized ? t("Vault passphrase") : t("Create a passphrase")}
         </label>
         <input
           id="vault-pass"
@@ -747,12 +777,14 @@ function VaultGate({
           minLength={10}
           required
           placeholder={
-            initialized ? "Enter your passphrase" : "At least 10 characters"
+            initialized
+              ? t("Enter your passphrase")
+              : t("At least 10 characters")
           }
         />
         {!initialized && (
           <>
-            <label htmlFor="vault-confirm">Confirm passphrase</label>
+            <label htmlFor="vault-confirm">{t("Confirm passphrase")}</label>
             <input
               id="vault-confirm"
               type="password"
@@ -763,16 +795,16 @@ function VaultGate({
             />
           </>
         )}
-        {error && <span className="form-error">{error}</span>}
+        {error && <span className="form-error">{t(error)}</span>}
         <Button className="primary full" type="submit" busy={busy === "unlock"}>
           <LockKeyhole size={16} />
-          {initialized ? "Unlock local vault" : "Create encrypted vault"}
+          {initialized ? t("Unlock local vault") : t("Create encrypted vault")}
         </Button>
       </form>
       <small>
         {initialized
-          ? "The companion must remain running during your task."
-          : "Keep your passphrase safe. There is no account-based recovery."}
+          ? t("The companion must remain running during your task.")
+          : t("Keep your passphrase safe. There is no account-based recovery.")}
       </small>
     </div>
   );
@@ -793,55 +825,62 @@ function Overview({
     <>
       <div className="page-heading">
         <div>
-          <span className="eyebrow">YOUR LOCAL COMMAND CENTER</span>
+          <span className="eyebrow">{t("YOUR LOCAL COMMAND CENTER")}</span>
           <h1>
-            A little less work.
+            {t("A little less work.")}
             <br />
-            <span className="subtle-heading">A lot more control.</span>
+            <span className="subtle-heading">{t("A lot more control.")}</span>
           </h1>
-          <p>Give your agent a task. Keep your personal information here.</p>
+          <p>
+            {t("Give your agent a task. Keep your personal information here.")}
+          </p>
         </div>
         <Button className="primary" onClick={() => setTaskModal(true)}>
           <Plus size={17} />
-          New task
+          {t("New task")}
         </Button>
       </div>
       <div className="overview-grid">
         <section className="hero-card">
           <div className="hero-card-copy">
-            <Pill tone="green">Privacy boundary active</Pill>
+            <Pill tone="green">{t("Privacy boundary active")}</Pill>
             <h2>
-              Your details stay local.
+              {t("Your details stay local.")}
               <br />
-              Your agent gets references.
+              {t("Your agent gets references.")}
             </h2>
             <p>
-              Review screenshots before they reach the model. Choose which saved
-              details the agent may enter into a website.
+              {t(
+                "Review screenshots before they reach the model. Choose which saved details the agent may enter into a website.",
+              )}
             </p>
             <button className="text-link" onClick={() => navigate("activity")}>
-              Explore task activity <ArrowUpRight size={16} />
+              {t("Explore task activity")}
+              <ArrowUpRight size={16} />
             </button>
           </div>
           <div className="vault-visual" aria-hidden="true">
             <div className="visual-grid" />
             <div className="vault-tile">
               <Fingerprint size={45} />
-              <span>LOCAL VAULT</span>
+              <span>{t("LOCAL VAULT")}</span>
               <i />
               <i />
               <i />
             </div>
             <div className="reference-chip">
               <span />
-              ref_01 <LockKeyhole size={12} />
+              {t("ref_01")}
+              <LockKeyhole size={12} />
             </div>
             <div className="reference-chip second">
               <span />
-              ref_02 <LockKeyhole size={12} />
+              {t("ref_02")}
+              <LockKeyhole size={12} />
             </div>
             <div className="visual-caption">
-              <ShieldCheck size={13} /> Approved references only
+              <ShieldCheck size={13} />
+              {t("Approved references only")}
             </div>
           </div>
         </section>
@@ -849,14 +888,18 @@ function Overview({
           <div className="card-top">
             <Globe2 size={20} />
             <Pill tone={status.browser.connected ? "green" : "amber"}>
-              {status.browser.connected ? "Connected" : "Not connected"}
+              {status.browser.connected ? t("Connected") : t("Not connected")}
             </Pill>
           </div>
-          <h3>Automation browser</h3>
+          <h3>{t("Automation browser")}</h3>
           <p>
             {status.browser.connected
-              ? "Your dedicated browser is ready. Start a task on a selected tab."
-              : "Launch a dedicated browser to keep automation separate from everyday browsing."}
+              ? t(
+                  "Your dedicated browser is ready. Start a task on a selected tab.",
+                )
+              : t(
+                  "Launch a dedicated browser to keep automation separate from everyday browsing.",
+                )}
           </p>
           <Button
             className="secondary full"
@@ -871,13 +914,13 @@ function Overview({
           >
             <Globe2 size={16} />
             {status.browser.connected
-              ? "Check browser connection"
-              : "Launch browser"}
+              ? t("Check browser connection")
+              : t("Launch browser")}
             <ArrowUpRight size={15} />
           </Button>
           <small>
             <span className="status-dot" />
-            Runs on your computer
+            {t("Runs on your computer")}
           </small>
         </section>
       </div>
@@ -887,10 +930,10 @@ function Overview({
             <Database size={20} />
           </span>
           <div>
-            <span>Saved information</span>
+            <span>{t("Saved information")}</span>
             <strong>
               {records.length}
-              <small>confirmed fields</small>
+              <small>{t("confirmed fields")}</small>
             </strong>
           </div>
           <ArrowUpRight size={17} />
@@ -900,10 +943,10 @@ function Overview({
             <FileText size={20} />
           </span>
           <div>
-            <span>Local documents</span>
+            <span>{t("Local documents")}</span>
             <strong>
               {documents.length}
-              <small>in your vault</small>
+              <small>{t("in your vault")}</small>
             </strong>
           </div>
           <ArrowUpRight size={17} />
@@ -913,10 +956,10 @@ function Overview({
             <CheckCheck size={20} />
           </span>
           <div>
-            <span>Completed tasks</span>
+            <span>{t("Completed tasks")}</span>
             <strong>
               {tasks.filter((t: Task) => t.status === "completed").length}
-              <small>with your oversight</small>
+              <small>{t("with your oversight")}</small>
             </strong>
           </div>
           <ArrowUpRight size={17} />
@@ -926,11 +969,12 @@ function Overview({
         <section className="panel">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">WORK IN PROGRESS</span>
-              <h2>Task activity</h2>
+              <span className="eyebrow">{t("WORK IN PROGRESS")}</span>
+              <h2>{t("Task activity")}</h2>
             </div>
             <button className="text-link" onClick={() => navigate("activity")}>
-              View all <ArrowRight size={14} />
+              {t("View all")}
+              <ArrowRight size={14} />
             </button>
           </div>
           {task ? (
@@ -941,7 +985,7 @@ function Overview({
               <div>
                 <strong>{task.goal}</strong>
                 <small>
-                  Step {task.step ?? 0} · {formatStatus(task.status)}
+                  {t("Step")} {task.step ?? 0} · {formatStatus(task.status)}
                 </small>
               </div>
               <ChevronRight size={18} />
@@ -949,12 +993,12 @@ function Overview({
           ) : (
             <Empty
               icon={<Activity size={27} />}
-              title="Your next task starts here"
+              title={t("Your next task starts here")}
               detail="Ask the agent to fill a form using your saved profile. Follow every step as it happens."
             >
               <Button className="secondary" onClick={() => setTaskModal(true)}>
                 <Plus size={15} />
-                Create a task
+                {t("Create a task")}
               </Button>
             </Empty>
           )}
@@ -962,8 +1006,8 @@ function Overview({
         <section className="panel getting-started">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">FIRST THINGS FIRST</span>
-              <h2>Make it yours</h2>
+              <span className="eyebrow">{t("FIRST THINGS FIRST")}</span>
+              <h2>{t("Make it yours")}</h2>
             </div>
             <span className="step-count">
               {Number(records.length > 0) +
@@ -1004,7 +1048,7 @@ function Overview({
                 {s.done ? <Check size={15} /> : String(i + 1).padStart(2, "0")}
               </span>
               <div>
-                <strong>{s.title}</strong>
+                <strong>{t(s.title)}</strong>
                 <small>{s.text}</small>
               </div>
               <ChevronRight size={15} />
@@ -1013,8 +1057,8 @@ function Overview({
           <div className="demo-note">
             <Sparkles size={16} />
             <div>
-              <strong>Just exploring?</strong>
-              <p>Use synthetic details for a safe first run.</p>
+              <strong>{t("Just exploring?")}</strong>
+              <p>{t("Use synthetic details for a safe first run.")}</p>
               <button
                 className="text-link"
                 disabled={!!busy}
@@ -1026,7 +1070,8 @@ function Overview({
                   )
                 }
               >
-                Load demo profile <ArrowRight size={13} />
+                {t("Load demo profile")}
+                <ArrowRight size={13} />
               </button>
             </div>
           </div>
@@ -1053,42 +1098,45 @@ function Vault({
     <>
       <div className="page-heading compact">
         <div>
-          <span className="eyebrow">PRIVATE INFORMATION, ON YOUR DEVICE</span>
-          <h1>Personal vault</h1>
-          <p>Confirmed details become references your agent can use.</p>
+          <span className="eyebrow">
+            {t("PRIVATE INFORMATION, ON YOUR DEVICE")}
+          </span>
+          <h1>{t("Personal vault")}</h1>
+          <p>{t("Confirmed details become references your agent can use.")}</p>
         </div>
         <div className="button-row">
           <Button className="secondary" onClick={() => setCalculating(true)}>
-            Calculate total
+            {t("Calculate total")}
           </Button>
           <Button className="primary" onClick={() => setEdit(null)}>
             <Plus size={17} />
-            Add information
+            {t("Add information")}
           </Button>
         </div>
       </div>
       <div className="info-strip">
         <LockKeyhole size={18} />
         <span>
-          Values are encrypted at rest and masked here by default. The model
-          receives references.
+          {t(
+            "Values are encrypted at rest and masked here by default. The model receives references.",
+          )}
         </span>
-        <Pill tone="green">Vault unlocked</Pill>
+        <Pill tone="green">{t("Vault unlocked")}</Pill>
       </div>
       <section className="panel">
         <div className="table-toolbar">
           <div className="search-input">
             <Search size={17} />
             <input
-              aria-label="Search records"
-              placeholder="Find a saved field…"
+              aria-label={t("Search records")}
+              placeholder={t("Find a saved field…")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <Button className="ghost small" onClick={() => setReveal(!reveal)}>
             {reveal ? <EyeOff size={16} /> : <Eye size={16} />}{" "}
-            {reveal ? "Hide values" : "Reveal values"}
+            {reveal ? t("Hide values") : t("Reveal values")}
           </Button>
         </div>
         {records.length ? (
@@ -1096,9 +1144,9 @@ function Vault({
             <table>
               <thead>
                 <tr>
-                  <th>FIELD</th>
-                  <th>VALUE · LOCAL ONLY</th>
-                  <th>SCOPE & SOURCE</th>
+                  <th>{t("FIELD")}</th>
+                  <th>{t("VALUE · LOCAL ONLY")}</th>
+                  <th>{t("SCOPE & SOURCE")}</th>
                   <th />
                 </tr>
               </thead>
@@ -1146,7 +1194,7 @@ function Vault({
                             onClick={() => setEdit(r)}
                             aria-label={"Edit " + r.label}
                           >
-                            Edit
+                            {t("Edit")}
                           </button>
                           <button
                             onClick={() => setDeleting(r.id)}
@@ -1164,12 +1212,12 @@ function Vault({
         ) : (
           <Empty
             icon={<Database size={30} />}
-            title="Meet your local memory"
+            title={t("Meet your local memory")}
             detail="Add your name, contact details, and other information once. Reuse them with your approval."
           >
             <Button className="secondary" onClick={() => setEdit(null)}>
               <Plus size={15} />
-              Add your first field
+              {t("Add your first field")}
             </Button>
           </Empty>
         )}
@@ -1177,8 +1225,9 @@ function Vault({
       <div className="bottom-note">
         <CircleHelp size={16} />
         <span>
-          Documents can suggest new fields. Reviewing them first keeps your
-          profile accurate.
+          {t(
+            "Documents can suggest new fields. Reviewing them first keeps your profile accurate.",
+          )}
         </span>
       </div>
       {calculating && (
@@ -1216,15 +1265,18 @@ function Vault({
         />
       )}
       {deleting && (
-        <Modal title="Delete this saved field?" close={() => setDeleting(null)}>
+        <Modal
+          title={t("Delete this saved field?")}
+          close={() => setDeleting(null)}
+        >
           <p className="modal-description">
-            This removes the field from your vault. Tasks using its reference
-            may need new information. Original source documents are managed
-            separately.
+            {t(
+              "This removes the field from your vault. Tasks using its reference may need new information. Original source documents are managed separately.",
+            )}
           </p>
           <div className="modal-actions">
             <Button className="secondary" onClick={() => setDeleting(null)}>
-              Keep field
+              {t("Keep field")}
             </Button>
             <Button
               className="danger"
@@ -1240,7 +1292,7 @@ function Vault({
                 )
               }
             >
-              Delete field
+              {t("Delete field")}
             </Button>
           </div>
         </Modal>
@@ -1266,11 +1318,11 @@ function Calculation({
     ["money", "amount", "statement_total", "total"].includes(r.field_type),
   );
   return (
-    <Modal title="Calculate a local total" close={close}>
+    <Modal title={t("Calculate a local total")} close={close}>
       <p className="modal-description">
-        Select reviewed amounts from the same period and currency. The companion
-        adds them with decimal arithmetic and saves a new reference. Check for
-        duplicate transactions before continuing.
+        {t(
+          "Select reviewed amounts from the same period and currency. The companion adds them with decimal arithmetic and saves a new reference. Check for duplicate transactions before continuing.",
+        )}
       </p>
       <form
         onSubmit={(e) => {
@@ -1278,7 +1330,7 @@ function Calculation({
           save({ record_ids: ids, label, currency });
         }}
       >
-        <label>Amount records</label>
+        <label>{t("Amount records")}</label>
         <div className="available-records">
           {amounts.length ? (
             amounts.map((r) => (
@@ -1306,14 +1358,15 @@ function Calculation({
             ))
           ) : (
             <p>
-              No reviewed amount fields. Upload a document or add amount records
-              to your vault.
+              {t(
+                "No reviewed amount fields. Upload a document or add amount records to your vault.",
+              )}
             </p>
           )}
         </div>
         <div className="form-grid">
           <label>
-            Result label
+            {t("Result label")}
             <input
               value={label}
               onChange={(e) => setLabel(e.target.value)}
@@ -1321,21 +1374,21 @@ function Calculation({
             />
           </label>
           <label>
-            Currency
+            {t("Currency")}
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
             >
-              <option value="INR">INR</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="GBP">GBP</option>
+              <option value="INR">{t("INR")}</option>
+              <option value="USD">{t("USD")}</option>
+              <option value="EUR">{t("EUR")}</option>
+              <option value="GBP">{t("GBP")}</option>
             </select>
           </label>
         </div>
         <div className="modal-actions">
           <Button type="button" className="secondary" onClick={close}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             type="submit"
@@ -1343,7 +1396,7 @@ function Calculation({
             disabled={!ids.length}
             busy={busy === "calculation"}
           >
-            Calculate & save
+            {t("Calculate & save")}
           </Button>
         </div>
       </form>
@@ -1367,12 +1420,13 @@ function RecordEditor({
     [scope, setScope] = useState(record?.scope || "profile");
   return (
     <Modal
-      title={record ? "Update saved information" : "Add information"}
+      title={record ? t("Update saved information") : t("Add information")}
       close={close}
     >
       <p className="modal-description">
-        The actual value stays in your local vault. Use a generic field label
-        without private details.
+        {t(
+          "The actual value stays in your local vault. Use a generic field label without private details.",
+        )}
       </p>
       <form
         onSubmit={(e) => {
@@ -1388,55 +1442,55 @@ function RecordEditor({
         }}
       >
         <label>
-          Field label
+          {t("Field label")}
           <input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. Applicant full name"
+            placeholder={t("e.g. Applicant full name")}
             required
             maxLength={100}
           />
         </label>
         <div className="form-grid">
           <label>
-            Information type
+            {t("Information type")}
             <select value={type} onChange={(e) => setType(e.target.value)}>
               {fieldTypes.map(([v, l]) => (
                 <option key={v} value={v}>
-                  {l}
+                  {t(l)}
                 </option>
               ))}
             </select>
           </label>
           <label>
-            Scope
+            {t("Scope")}
             <select value={scope} onChange={(e) => setScope(e.target.value)}>
               {!["profile", "document", "task"].includes(scope) && (
                 <option value={scope}>{formatScope(scope)}</option>
               )}
-              <option value="profile">Reusable profile</option>
-              <option value="document">Document information</option>
-              <option value="task">This task</option>
+              <option value="profile">{t("Reusable profile")}</option>
+              <option value="document">{t("Document information")}</option>
+              <option value="task">{t("This task")}</option>
             </select>
           </label>
         </div>
         <label>
-          Actual value · local only
+          {t("Actual value · local only")}
           <textarea
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="Enter the private value"
+            placeholder={t("Enter the private value")}
             required
             rows={3}
           />
         </label>
         <div className="modal-actions">
           <Button className="secondary" type="button" onClick={close}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button className="primary" type="submit" busy={busy === "record"}>
             <Check size={16} />
-            Save to vault
+            {t("Save to vault")}
           </Button>
         </div>
       </form>
@@ -1481,14 +1535,17 @@ function Documents({
     <>
       <div className="page-heading compact">
         <div>
-          <span className="eyebrow">EXTRACT HERE. REVIEW HERE. KEEP HERE.</span>
-          <h1>Documents</h1>
+          <span className="eyebrow">
+            {t("EXTRACT HERE. REVIEW HERE. KEEP HERE.")}
+          </span>
+          <h1>{t("Documents")}</h1>
           <p>
-            Turn your documents into useful information without uploading them
-            to a model.
+            {t(
+              "Turn your documents into useful information without uploading them to a model.",
+            )}
           </p>
         </div>
-        <Pill tone="green">Local extraction</Pill>
+        <Pill tone="green">{t("Local extraction")}</Pill>
       </div>
       <input
         ref={input}
@@ -1524,41 +1581,44 @@ function Documents({
         </span>
         <h3>
           {busy === "upload"
-            ? "Extracting on your device…"
-            : "Drop a document into your workspace"}
+            ? t("Extracting on your device…")
+            : t("Drop a document into your workspace")}
         </h3>
         <p>
-          or <span>browse files</span> from your device
+          {t("or")}
+          <span>{t("browse files")}</span>
+          {t("from your device")}
         </p>
-        <small>PDF, images, TXT or CSV · Up to 10 MiB</small>
+        <small>{t("PDF, images, TXT or CSV · Up to 10 MiB")}</small>
       </button>
       <div className="document-flow">
         <span>
           <FileText size={16} />
-          Upload locally
+          {t("Upload locally")}
         </span>
         <ChevronRight size={15} />
         <span>
           <Search size={16} />
-          Extract fields
+          {t("Extract fields")}
         </span>
         <ChevronRight size={15} />
         <span>
           <CheckCheck size={16} />
-          Review & confirm
+          {t("Review & confirm")}
         </span>
         <ChevronRight size={15} />
         <span>
           <FolderLock size={16} />
-          Save to vault
+          {t("Save to vault")}
         </span>
       </div>
       <section className="panel">
         <div className="section-heading">
           <h2>
-            Document library <span className="count">{documents.length}</span>
+            {t("Document library")}
+            <span className="count">{documents.length}</span>
           </h2>
-          <Pill>Encrypted originals</Pill>
+          <Pill>{t("Encrypted originals")}</Pill>
         </div>
         {documents.length ? (
           <div className="document-list">
@@ -1572,8 +1632,8 @@ function Documents({
                   <small>
                     {d.created_at
                       ? new Date(d.created_at).toLocaleDateString()
-                      : "Stored on this device"}{" "}
-                    · {d.status ? formatStatus(d.status) : "Local original"}
+                      : t("Stored on this device")}{" "}
+                    · {d.status ? formatStatus(d.status) : t("Local original")}
                   </small>
                 </div>
                 {d.status !== "reviewed" && d.candidates && (
@@ -1591,7 +1651,7 @@ function Documents({
                       })
                     }
                   >
-                    Review fields
+                    {t("Review fields")}
                   </Button>
                 )}
                 <button
@@ -1607,20 +1667,21 @@ function Documents({
         ) : (
           <Empty
             icon={<FileText size={28} />}
-            title="Your documents belong here"
+            title={t("Your documents belong here")}
             detail="Upload a statement or screenshot. Review suggested fields before adding anything to your vault."
           />
         )}
       </section>
       {review && (
         <Modal
-          title="Review extracted information"
+          title={t("Review extracted information")}
           wide
           close={() => setReview(null)}
         >
           <p className="modal-description">
-            Verify each value against your document. Only checked fields will be
-            saved. Keep document facts separate from your reusable profile.
+            {t(
+              "Verify each value against your document. Only checked fields will be saved. Keep document facts separate from your reusable profile.",
+            )}
           </p>
           {review.warnings.map((w, i) => (
             <div className="alert" key={i}>
@@ -1651,7 +1712,8 @@ function Documents({
                     <span>{c.label}</span>
                     {c.confidence !== undefined ? (
                       <small>
-                        {Math.round(c.confidence * 100)}% extraction hint
+                        {Math.round(c.confidence * 100)}
+                        {t("% extraction hint")}
                       </small>
                     ) : null}
                   </label>
@@ -1659,7 +1721,7 @@ function Documents({
                     {c.source || "Local extraction"}
                   </small>
                   <label>
-                    Field label
+                    {t("Field label")}
                     <input
                       aria-label={"Label for candidate " + (i + 1)}
                       value={c.label}
@@ -1675,7 +1737,7 @@ function Documents({
                   </label>
                   <div className="form-grid">
                     <label>
-                      Value
+                      {t("Value")}
                       <input
                         aria-label={"Value for " + c.label}
                         value={c.value}
@@ -1690,7 +1752,7 @@ function Documents({
                       />
                     </label>
                     <label>
-                      Save to
+                      {t("Save to")}
                       <select
                         value={c.scope}
                         onChange={(e) =>
@@ -1703,10 +1765,10 @@ function Documents({
                         }
                       >
                         <option value={"document:" + review.document.id}>
-                          Document information
+                          {t("Document information")}
                         </option>
-                        <option value="profile">Reusable profile</option>
-                        <option value="task">Task information</option>
+                        <option value="profile">{t("Reusable profile")}</option>
+                        <option value="task">{t("Task information")}</option>
                       </select>
                     </label>
                   </div>
@@ -1716,13 +1778,13 @@ function Documents({
           ) : (
             <Empty
               icon={<Search size={25} />}
-              title="No supported fields found"
+              title={t("No supported fields found")}
               detail="The original is saved locally. Try a clearer document or add information manually in your vault."
             />
           )}
           <div className="modal-actions">
             <Button className="secondary" onClick={() => setReview(null)}>
-              Keep original only
+              {t("Keep original only")}
             </Button>
             <Button
               className="primary"
@@ -1750,21 +1812,24 @@ function Documents({
               }
             >
               <CheckCheck size={16} />
-              Confirm selected fields
+              {t("Confirm selected fields")}
             </Button>
           </div>
         </Modal>
       )}
       {deleting && (
-        <Modal title="Delete this document?" close={() => setDeleting(null)}>
+        <Modal
+          title={t("Delete this document?")}
+          close={() => setDeleting(null)}
+        >
           <p className="modal-description">
-            The encrypted original and its extraction candidates will be
-            removed. Previously confirmed vault fields are managed separately in
-            Personal vault.
+            {t(
+              "The encrypted original and its extraction candidates will be removed. Previously confirmed vault fields are managed separately in Personal vault.",
+            )}
           </p>
           <div className="modal-actions">
             <Button className="secondary" onClick={() => setDeleting(null)}>
-              Keep document
+              {t("Keep document")}
             </Button>
             <Button
               className="danger"
@@ -1780,7 +1845,7 @@ function Documents({
                 )
               }
             >
-              Delete original
+              {t("Delete original")}
             </Button>
           </div>
         </Modal>
@@ -1800,7 +1865,7 @@ function Approval({ task, busy, act }: { task: Task; busy: string; act: any }) {
           <ShieldCheck size={23} />
         </span>
         <div>
-          <span className="eyebrow">YOUR APPROVAL IS REQUIRED</span>
+          <span className="eyebrow">{t("YOUR APPROVAL IS REQUIRED")}</span>
           <h2>
             {p.title ||
               {
@@ -1811,22 +1876,42 @@ function Approval({ task, busy, act }: { task: Task; busy: string; act: any }) {
               "Review proposed action"}
           </h2>
         </div>
-        <Pill tone="amber">Paused for you</Pill>
+        <Pill tone="amber">{t("Paused for you")}</Pill>
       </div>
       <p>
         {p.kind === "model"
-          ? "Inspect the prepared payload below before it is sent for reasoning. If you spot private information, deny the request."
+          ? t(
+              "Inspect the prepared payload before the task continues. If you spot private information, deny the request.",
+            )
           : p.kind === "disclosure"
-            ? "These references will resolve to real values on this device and be entered into the listed website. The website may receive them immediately."
-            : "Review the destination and exact action. Approval allows this consequential action to execute."}
+            ? t(
+                "These references will resolve to real values on this device and be entered into the listed website. The website may receive them immediately.",
+              )
+            : t(
+                "Check the button and website below. Approval lets the agent perform this action.",
+              )}
       </p>
-      <pre className="payload" tabIndex={0}>
-        {JSON.stringify(p.payload, null, 2)}
-      </pre>
+      {p.summary && (
+        <div className="action-summary">
+          <strong>{p.summary.action}</strong>
+          {p.summary.destination && (
+            <p>
+              {t("Website")}: {p.summary.destination}
+            </p>
+          )}
+          {p.summary.detail && <p>{t(p.summary.detail)}</p>}
+        </div>
+      )}
+      <details>
+        <summary>{t("Technical details")}</summary>
+        <pre className="payload" tabIndex={0}>
+          {JSON.stringify(p.payload, null, 2)}
+        </pre>
+      </details>
       <div className="approval-actions">
         <span>
           <LockKeyhole size={14} />
-          Approval applies to this request only.
+          {t("Approval applies to this request only.")}
         </span>
         <Button
           className="secondary"
@@ -1840,7 +1925,7 @@ function Approval({ task, busy, act }: { task: Task; busy: string; act: any }) {
             )
           }
         >
-          Deny
+          {t("Deny")}
         </Button>
         <Button
           className="primary"
@@ -1856,10 +1941,10 @@ function Approval({ task, busy, act }: { task: Task; busy: string; act: any }) {
         >
           <Check size={17} />
           {p.kind === "model"
-            ? "Approve context"
+            ? t("Approve context")
             : p.kind === "submit"
-              ? "Approve submission"
-              : "Approve disclosure"}
+              ? t("Allow action")
+              : t("Approve disclosure")}
         </Button>
       </div>
     </section>
@@ -1893,25 +1978,29 @@ function ActivityPage({
     <>
       <div className="page-heading compact">
         <div>
-          <span className="eyebrow">EVERY STEP, WITH YOUR OVERSIGHT</span>
-          <h1>Task activity</h1>
-          <p>Follow the agent, inspect its context, and stay in control.</p>
+          <span className="eyebrow">
+            {t("EVERY STEP, WITH YOUR OVERSIGHT")}
+          </span>
+          <h1>{t("Task activity")}</h1>
+          <p>
+            {t("Follow the agent, inspect its context, and stay in control.")}
+          </p>
         </div>
         <Button className="primary" onClick={start}>
           <Plus size={17} />
-          New task
+          {t("New task")}
         </Button>
       </div>
       {!task ? (
         <section className="panel">
           <Empty
             icon={<Activity size={32} />}
-            title="No tasks yet. You're in control."
+            title={t("No tasks yet. You're in control.")}
             detail="Start from your browser extension or enter a website here. Your agent's progress will appear in this workspace."
           >
             <Button className="secondary" onClick={start}>
               <Plus size={16} />
-              Start your first task
+              {t("Start your first task")}
             </Button>
           </Empty>
         </section>
@@ -1935,7 +2024,8 @@ function ActivityPage({
               </Pill>
               <h2>{task.goal}</h2>
               <small>
-                Task {task.id.slice(0, 8)} · Step {task.step ?? 0}
+                {t("Task")} {task.id.slice(0, 8)}
+                {t(" · Step ")} {task.step ?? 0}
               </small>
             </div>
             {!terminalStates.includes(task.status) && (
@@ -1944,7 +2034,13 @@ function ActivityPage({
                   className="secondary small"
                   busy={busy === "control"}
                   onClick={() => {
-                    if (resumable) setResume(true);
+                    if (resumable && task.human_action)
+                      void act("control", () =>
+                        post("/tasks/" + task.id + "/control", {
+                          action: "resume",
+                        }),
+                      );
+                    else if (resumable) setResume(true);
                     else
                       void act("control", () =>
                         post("/tasks/" + task.id + "/control", {
@@ -1954,7 +2050,11 @@ function ActivityPage({
                   }}
                 >
                   {resumable ? <Play size={15} /> : <Pause size={15} />}{" "}
-                  {resumable ? "Review & resume" : "Pause"}
+                  {resumable
+                    ? task.human_action
+                      ? t("I've finished — continue")
+                      : t("Review & resume")
+                    : t("Pause")}
                 </Button>
                 <Button
                   className="danger-outline small"
@@ -1968,29 +2068,40 @@ function ActivityPage({
                   }
                 >
                   <Square size={13} />
-                  Stop
+                  {t("Stop")}
                 </Button>
               </div>
             )}
           </section>
-          {resumable && (
+          {resumable && task.human_action && (
+            <div className="info-strip">
+              <KeyRound size={17} />
+              <span>
+                {t(
+                  "Complete the requested step in the controlled browser, then choose “I've finished — continue”. The agent will check the page and resume this task. Enter passwords, OTPs and CAPTCHA answers only on the website.",
+                )}
+              </span>
+            </div>
+          )}
+          {resumable && !task.human_action && (
             <div className="info-strip">
               <CircleHelp size={17} />
               <span>
-                Add or review missing information in the vault or documents,
-                then choose the fields to use when resuming.
+                {t(
+                  "Add or review missing information in the vault or documents, then choose the fields to use when resuming.",
+                )}
               </span>
               <button
                 className="button secondary small"
                 onClick={() => navigate("vault")}
               >
-                Add details
+                {t("Add details")}
               </button>
               <button
                 className="button secondary small"
                 onClick={() => navigate("documents")}
               >
-                Upload document
+                {t("Upload document")}
               </button>
             </div>
           )}
@@ -2011,6 +2122,50 @@ function ActivityPage({
             />
           )}
           <Approval task={task} busy={busy} act={act} />
+          {task.brief && (
+            <details>
+              <summary>{t("Structured task brief")}</summary>
+              <pre className="payload">{task.brief}</pre>
+            </details>
+          )}
+          {!!task.plan?.length && (
+            <section className="panel">
+              <div className="section-heading">
+                <h2>{t("Task plan")}</h2>
+              </div>
+              <ol className="stage-plan">
+                {task.plan.map((stage, index) => (
+                  <li key={index}>
+                    <Pill tone={stage.status === "done" ? "green" : "amber"}>
+                      {formatStatus(stage.status)}
+                    </Pill>
+                    <strong>{stage.title}</strong>
+                    <p>{stage.success_criteria}</p>
+                    {!!stage.source_ids.length && (
+                      <small>
+                        {t("Sources: ")} {stage.source_ids.join(", ")}
+                      </small>
+                    )}
+                  </li>
+                ))}
+              </ol>
+              {!!task.sources?.length && (
+                <details>
+                  <summary>{t("Sources consulted")}</summary>
+                  <ol>
+                    {task.sources.map((source) => (
+                      <li key={source.id}>
+                        <a href={source.url} target="_blank" rel="noreferrer">
+                          {source.title || source.url}
+                        </a>
+                        <p>{source.note}</p>
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+              )}
+            </section>
+          )}
           {task.error && (
             <div className="alert error">
               <AlertCircle size={18} />
@@ -2032,8 +2187,10 @@ function ActivityPage({
               <div>
                 <strong>
                   {task.status === "waiting_input"
-                    ? "Information needed"
-                    : "Task result"}
+                    ? task.human_action
+                      ? t("Your browser action is needed")
+                      : t("Information needed")
+                    : t("Task result")}
                 </strong>
                 <p>
                   {typeof task.result === "string"
@@ -2045,8 +2202,11 @@ function ActivityPage({
           )}
           <section className="panel">
             <div className="section-heading">
-              <h2>Execution timeline</h2>
-              <span className="count">{task.events?.length || 0} events</span>
+              <h2>{t("Execution timeline")}</h2>
+              <span className="count">
+                {task.events?.length || 0}
+                {t(" events")}
+              </span>
             </div>
             {task.events?.length ? (
               <div className="timeline">
@@ -2083,7 +2243,7 @@ function ActivityPage({
             ) : (
               <Empty
                 icon={<LoaderCircle size={23} />}
-                title="Waiting for the first event"
+                title={t("Waiting for the first event")}
                 detail="The task's next step will appear here automatically."
               />
             )}
@@ -2094,7 +2254,7 @@ function ActivityPage({
                 className="section-heading payload-toggle"
                 onClick={() => setShowPayload(!showPayload)}
               >
-                <h2>Last sanitized request</h2>
+                <h2>{t("Last sanitized request")}</h2>
                 {showPayload ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
               {showPayload && (
@@ -2109,7 +2269,7 @@ function ActivityPage({
       {tasks.length > 0 && (
         <section className="panel history">
           <div className="section-heading">
-            <h2>Recent tasks</h2>
+            <h2>{t("Recent tasks")}</h2>
           </div>
           {tasks.map((t) => (
             <button
@@ -2151,11 +2311,11 @@ function ResumeInformation({
       .catch(() => {});
   }, []);
   return (
-    <Modal title="Review available information" close={close}>
+    <Modal title={t("Review available information")} close={close}>
       <p className="modal-description">
-        Choose the confirmed fields this task may use. Include newly reviewed
-        document information when needed. Resuming captures a fresh page and
-        requests new approvals.
+        {t(
+          "Choose the confirmed fields this task may use. Include newly reviewed document information when needed. Resuming captures a fresh page and requests new approvals.",
+        )}
       </p>
       <div className="available-records">
         {available.map((r) => (
@@ -2180,7 +2340,7 @@ function ResumeInformation({
       </div>
       <div className="modal-actions">
         <Button className="secondary" onClick={close}>
-          Keep paused
+          {t("Keep paused")}
         </Button>
         <Button
           className="primary"
@@ -2188,12 +2348,76 @@ function ResumeInformation({
           onClick={() => resume(ids)}
         >
           <Play size={15} />
-          Resume with selected fields
+          {t("Resume with selected fields")}
         </Button>
       </div>
     </Modal>
   );
 }
+function ApiKeyPool({
+  label,
+  value,
+  onChange,
+  stored,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  stored: number;
+}) {
+  const rows = value.split("\n");
+  return (
+    <div className="api-key-pool">
+      <strong>{t(label)}</strong>
+      {rows.map((row, index) => (
+        <div key={index} className="key-pool-row">
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={`${label} key ${index + 1}`}
+            value={row}
+            placeholder={`Key ${index + 1}`}
+            onChange={(e) =>
+              onChange(
+                rows
+                  .map((item, i) => (i === index ? e.target.value : item))
+                  .join("\n"),
+              )
+            }
+          />
+          {rows.length > 1 && (
+            <button
+              type="button"
+              className="text-link"
+              aria-label={`Remove ${label} key ${index + 1}`}
+              onClick={() =>
+                onChange(rows.filter((_, i) => i !== index).join("\n"))
+              }
+            >
+              {t("Remove")}
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        className="text-link"
+        disabled={rows.length >= 10}
+        onClick={() => onChange(value + "\n")}
+      >
+        {t("Add another key")}
+      </button>
+      <small className="settings-note">
+        {stored}
+        {t(
+          "saved keys. Leave all rows blank to keep them. Entering keys replaces the saved pool when you save. Up to 10 keys.",
+        )}
+      </small>
+    </div>
+  );
+}
+
 function Settings({
   status,
   busy,
@@ -2206,30 +2430,32 @@ function Settings({
   unpair: () => void;
 }) {
   const [mode, setMode] = useState(status.provider.mode || "remote"),
-    [model, setModel] = useState(status.provider.model || "gemini-2.5-flash"),
+    [model, setModel] = useState(
+      status.provider.model || "google/gemini-2.5-flash",
+    ),
     [key, setKey] = useState(""),
+    [keyCount, setKeyCount] = useState(0),
+    [fallbackKeyCount, setFallbackKeyCount] = useState(0),
+    [removePrimary, setRemovePrimary] = useState(false),
+    [keyChecks, setKeyChecks] = useState<any[]>([]),
     [fallbackKey, setFallbackKey] = useState(""),
-    [fallbackModel, setFallbackModel] = useState("gpt-4.1-mini"),
+    [fallbackModel, setFallbackModel] = useState("gemini-2.5-flash"),
     [fallbackConfigured, setFallbackConfigured] = useState(false),
     [removeFallback, setRemoveFallback] = useState(false),
-    [whisperKey, setWhisperKey] = useState(""),
-    [whisperConfigured, setWhisperConfigured] = useState(false),
-    [base, setBase] = useState(
-      "https://generativelanguage.googleapis.com/v1beta/openai",
-    ),
+    [speechReady, setSpeechReady] = useState(false),
+    [base, setBase] = useState("https://openrouter.ai/api/v1"),
     [tabs, setTabs] = useState<any[]>([]);
   useEffect(() => {
     void api("/settings")
       .then((r) => {
         setMode(r.mode || "remote");
-        setModel(r.model || "gemini-2.5-flash");
-        setBase(
-          r.base_url ||
-            "https://generativelanguage.googleapis.com/v1beta/openai",
-        );
-        setWhisperConfigured(!!r.whisper_configured);
-        setFallbackModel(r.fallback_model || "gpt-4.1-mini");
+        setModel(r.model || "google/gemini-2.5-flash");
+        setBase(r.base_url || "https://openrouter.ai/api/v1");
+        setSpeechReady(!!r.speech_ready);
+        setFallbackModel(r.fallback_model || "gemini-2.5-flash");
         setFallbackConfigured(!!r.fallback_configured);
+        setKeyCount(r.key_count || 0);
+        setFallbackKeyCount(r.fallback_key_count || 0);
       })
       .catch(() => {});
   }, []);
@@ -2237,9 +2463,11 @@ function Settings({
     <>
       <div className="page-heading compact">
         <div>
-          <span className="eyebrow">CONNECTED ON YOUR TERMS</span>
-          <h1>Connection & settings</h1>
-          <p>Manage your local browser and the model behind your agent.</p>
+          <span className="eyebrow">{t("CONNECTED ON YOUR TERMS")}</span>
+          <h1>{t("Connection & settings")}</h1>
+          <p>
+            {t("Manage your local browser and the model behind your agent.")}
+          </p>
         </div>
       </div>
       <div className="settings-grid">
@@ -2247,15 +2475,16 @@ function Settings({
           <div className="section-heading">
             <h2>
               <Globe2 size={20} />
-              Automation browser
+              {t("Automation browser")}
             </h2>
             <Pill tone={status.browser.connected ? "green" : "amber"}>
-              {status.browser.connected ? "Connected" : "Disconnected"}
+              {status.browser.connected ? t("Connected") : t("Disconnected")}
             </Pill>
           </div>
           <p>
-            A dedicated browser profile keeps agent work separate. The extension
-            must be loaded in this browser to start tasks from a selected tab.
+            {t(
+              "A dedicated browser profile keeps agent work separate. The extension must be loaded in this browser to start tasks from a selected tab.",
+            )}
           </p>
           <div className="button-row">
             <Button
@@ -2270,7 +2499,7 @@ function Settings({
               }
             >
               <Globe2 size={16} />
-              Launch browser
+              {t("Launch browser")}
             </Button>
             <Button
               className="secondary"
@@ -2284,7 +2513,7 @@ function Settings({
               }
             >
               <ArrowUpRight size={16} />
-              Open demo form
+              {t("Open demo form")}
             </Button>
           </div>
           <button
@@ -2296,7 +2525,7 @@ function Settings({
             }
           >
             <RefreshCw size={14} />
-            Refresh available tabs
+            {t("Refresh available tabs")}
           </button>
           {tabs.map((t) => (
             <div className="tab-row" key={t.target_id}>
@@ -2313,8 +2542,9 @@ function Settings({
           <div className="hint">
             <CircleHelp size={17} />
             <span>
-              If Chrome is already open in another profile, use the dedicated
-              automation window. The agent binds a tab by its target ID.
+              {t(
+                "If Chrome is already open in another profile, use the dedicated automation window. The agent binds a tab by its target ID.",
+              )}
             </span>
           </div>
         </section>
@@ -2322,7 +2552,7 @@ function Settings({
           <div className="section-heading">
             <h2>
               <Sparkles size={20} />
-              Reasoning provider
+              {t("Reasoning provider")}
             </h2>
             <Pill
               tone={
@@ -2332,10 +2562,10 @@ function Settings({
               }
             >
               {mode === "demo"
-                ? "Demo available"
+                ? t("Demo available")
                 : status.provider.configured
-                  ? "Configured"
-                  : "Setup needed"}
+                  ? t("Configured")
+                  : t("Setup needed")}
             </Pill>
           </div>
           <form
@@ -2344,121 +2574,146 @@ function Settings({
               void act(
                 "settings",
                 async () => {
-                  await post("/settings", {
+                  const saved = await post("/settings", {
                     mode,
                     model,
                     base_url: base,
-                    ...(key ? { api_key: key } : {}),
+                    ...(removePrimary
+                      ? { api_keys: [] }
+                      : key.trim()
+                        ? {
+                            api_keys: key
+                              .split("\n")
+                              .map((k) => k.trim())
+                              .filter(Boolean),
+                          }
+                        : {}),
                     fallback_model: fallbackModel,
                     ...(removeFallback
-                      ? { fallback_api_key: null }
-                      : fallbackKey
-                        ? { fallback_api_key: fallbackKey }
+                      ? { fallback_api_keys: [] }
+                      : fallbackKey.trim()
+                        ? {
+                            fallback_api_keys: fallbackKey
+                              .split("\n")
+                              .map((k) => k.trim())
+                              .filter(Boolean),
+                          }
                         : {}),
-                    ...(whisperKey ? { whisper_api_key: whisperKey } : {}),
                   });
                   setKey("");
-                  if (removeFallback) setFallbackConfigured(false);
-                  else if (fallbackKey) setFallbackConfigured(true);
+                  setKeyCount(saved.key_count);
+                  setFallbackKeyCount(saved.fallback_key_count);
+                  setFallbackConfigured(saved.fallback_configured);
+                  setRemovePrimary(false);
+                  setKeyChecks([]);
                   setFallbackKey("");
                   setRemoveFallback(false);
-                  if (whisperKey) setWhisperConfigured(true);
-                  setWhisperKey("");
                 },
                 "Provider settings saved locally.",
               );
             }}
           >
             <label>
-              Reasoning mode
+              {t("Reasoning mode")}
               <select value={mode} onChange={(e) => setMode(e.target.value)}>
-                <option value="demo">Demo · deterministic form planner</option>
+                <option value="demo">
+                  {t("Demo · deterministic form planner")}
+                </option>
                 <option value="remote">
-                  Remote · Gemini / compatible provider
+                  {t("Remote · OpenRouter / compatible provider")}
                 </option>
               </select>
             </label>
             {mode === "remote" && (
               <>
                 <label>
-                  Model identifier
+                  {t("Model identifier")}
                   <input
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
-                    placeholder="gemini-2.5-flash"
+                    placeholder={t("google/gemini-2.5-flash")}
                     required
                   />
                 </label>
                 <label>
-                  API base URL
+                  {t("API base URL")}
                   <input
                     type="url"
                     value={base}
                     onChange={(e) => setBase(e.target.value)}
-                    placeholder="https://api.example.com/v1"
+                    placeholder={t("https://openrouter.ai/api/v1")}
                     required
                   />
                 </label>
-                <label>
-                  Primary API key · Gemini
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    value={key}
-                    onChange={(e) => setKey(e.target.value)}
-                    placeholder={
-                      status.provider.configured
-                        ? "Stored locally · leave blank to keep"
-                        : "Enter your provider API key"
-                    }
-                  />
-                </label>
+                <ApiKeyPool
+                  label="OpenRouter API keys"
+                  value={key}
+                  stored={keyCount}
+                  onChange={(value) => {
+                    setKey(value);
+                    setRemovePrimary(false);
+                  }}
+                />
+                {keyCount > 0 && (
+                  <button
+                    type="button"
+                    className="text-link"
+                    onClick={() => {
+                      setRemovePrimary(true);
+                      setKey("");
+                    }}
+                  >
+                    {t("Remove primary keys on save")}
+                  </button>
+                )}
+                {removePrimary && (
+                  <small>
+                    {t("Primary keys will be removed when you save.")}
+                  </small>
+                )}
                 <small className="settings-note">
-                  The key is stored by the local companion. Visual checkpoints
-                  require image review before transmission; text review is
-                  optional.
+                  {t(
+                    "Keys are encrypted locally. Remote mode sends sanitized context to your configured provider for safety checks and task reasoning. You review requests that need attention.",
+                  )}
                 </small>
               </>
             )}
             <div className="whisper-settings">
-              <h3>Optional fallback · OpenAI</h3>
+              <h3>{t("Optional fallback · Gemini")}</h3>
               <p>
-                Gemini is tried first for each new task. If it fails, a saved
-                OpenAI key enables one switch to OpenAI for that task.
-                Screenshot requests require fresh approval for OpenAI.
+                {t(
+                  "OpenRouter keys are tried in order. If they fail, the agent switches to the Gemini key pool. The working key is kept for the task. Requests are checked again when the provider changes.",
+                )}
               </p>
               <label>
-                OpenAI fallback model
+                {t("Gemini fallback model")}
                 <input
                   value={fallbackModel}
                   onChange={(e) => setFallbackModel(e.target.value)}
                   required
                 />
               </label>
-              <label>
-                Separate OpenAI API key
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={fallbackKey}
-                  onChange={(e) => {
-                    setFallbackKey(e.target.value);
-                    setRemoveFallback(false);
-                  }}
-                  placeholder={
-                    fallbackConfigured
-                      ? "Configured · leave blank to keep"
-                      : "Optional · no fallback without a key"
-                  }
-                />
-              </label>
+              <ApiKeyPool
+                label="Gemini API keys · Google AI Studio"
+                value={fallbackKey}
+                stored={fallbackKeyCount}
+                onChange={(value) => {
+                  setFallbackKey(value);
+                  setRemoveFallback(false);
+                }}
+              />
+              <small className="settings-note">
+                {t(
+                  "Gemini quota is shared by keys in the same Google Cloud project. Extra keys do not add project quota or OpenRouter account credits.",
+                )}
+              </small>
               <small className="settings-note">
                 {removeFallback
-                  ? "Fallback will be removed when you save."
+                  ? t("Fallback will be removed when you save.")
                   : fallbackConfigured
-                    ? "OpenAI fallback configured locally."
-                    : "OpenAI fallback is not configured."}{" "}
-                The Whisper key is separate.
+                    ? t("Gemini fallback configured locally.")
+                    : t("Gemini fallback is not configured.")}{" "}
+                {t("Speech recognition runs locally without a key.")}
               </small>
               {fallbackConfigured && (
                 <button
@@ -2469,55 +2724,24 @@ function Settings({
                     setFallbackKey("");
                   }}
                 >
-                  Remove fallback on save
+                  {t("Remove fallback on save")}
                 </button>
               )}
             </div>
             <div className="whisper-settings">
-              <h3>Voice transcription · OpenAI Whisper</h3>
+              <h3>{t("Voice transcription · Local Whisper")}</h3>
               <p>
-                Audio is sent unredacted to OpenAI when you explicitly choose
-                Transcribe. Your editable transcript never starts a task
-                automatically.
+                {t(
+                  "English and Hindi recordings are transcribed on this machine. No API key or audio upload is needed. Review the transcript before starting a task.",
+                )}
               </p>
-              <label>
-                Separate Whisper API key
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={whisperKey}
-                  onChange={(e) => setWhisperKey(e.target.value)}
-                  placeholder={
-                    whisperConfigured
-                      ? "Configured · leave blank to keep"
-                      : "OpenAI API key for whisper-1"
-                  }
-                />
-              </label>
               <small className="settings-note">
-                {whisperConfigured
-                  ? "Whisper key configured locally."
-                  : "Whisper is not configured. Typed tasks still work."}
+                {speechReady
+                  ? t("Local multilingual speech model is ready.")
+                  : t("Install the local speech model, then refresh Settings.")}
               </small>
-              {whisperConfigured && (
-                <button
-                  type="button"
-                  className="text-link"
-                  onClick={() =>
-                    void act("whisper-remove", async () => {
-                      await post("/settings", {
-                        mode,
-                        model,
-                        base_url: base,
-                        whisper_api_key: null,
-                      });
-                      setWhisperConfigured(false);
-                      setWhisperKey("");
-                    })
-                  }
-                >
-                  Remove Whisper key
-                </button>
+              {!speechReady && (
+                <code>{t(".venv/bin/python scripts/speech_install.py")}</code>
               )}
             </div>
             <Button
@@ -2526,15 +2750,56 @@ function Settings({
               busy={busy === "settings"}
             >
               <Check size={16} />
-              Save settings
+              {t("Save settings")}
             </Button>
           </form>
+          <div className="whisper-settings">
+            <h3>{t("Demo readiness check")}</h3>
+            <p>
+              {t(
+                "Save your keys first. This sends one small test request per saved key using provider credits. It checks text and JSON output; it does not test a full browser task or images.",
+              )}
+            </p>
+            <Button
+              className="secondary"
+              busy={busy === "key-check"}
+              disabled={
+                !!busy ||
+                !!key.trim() ||
+                !!fallbackKey.trim() ||
+                removePrimary ||
+                removeFallback ||
+                !(keyCount + fallbackKeyCount)
+              }
+              onClick={() =>
+                void act("key-check", async () => {
+                  setKeyChecks([]);
+                  const result = await post("/settings/check", {});
+                  setKeyChecks(result.checks);
+                })
+              }
+            >
+              {t("Check saved keys")}
+            </Button>
+            {keyChecks.map((check, index) => (
+              <p key={index} role="status">
+                <strong>
+                  {check.provider}
+                  {t(" · key ")} {check.key_slot}:{" "}
+                  {check.ok ? t("Ready") : check.category}
+                </strong>{" "}
+                {check.status ? `HTTP ${check.status}. ` : ""}
+                {check.message}
+              </p>
+            ))}
+          </div>
           {mode === "demo" && (
             <div className="hint">
               <Sparkles size={17} />
               <span>
-                Demo mode uses a deterministic planner for supported form
-                fields. It makes no model API calls.
+                {t(
+                  "Demo mode uses a deterministic planner for supported form fields. It makes no model API calls.",
+                )}
               </span>
             </div>
           )}
@@ -2543,16 +2808,17 @@ function Settings({
           <div className="section-heading">
             <h2>
               <ShieldCheck size={20} />
-              Workspace security
+              {t("Workspace security")}
             </h2>
-            <Pill tone="green">Local session</Pill>
+            <Pill tone="green">{t("Local session")}</Pill>
           </div>
           <div className="setting-line">
             <div>
-              <strong>Lock the vault</strong>
+              <strong>{t("Lock the vault")}</strong>
               <p>
-                Remove decrypted data from the active workspace and pause
-                private-value access.
+                {t(
+                  "Remove decrypted data from the active workspace and pause private-value access.",
+                )}
               </p>
             </div>
             <Button
@@ -2561,20 +2827,21 @@ function Settings({
               onClick={() => void act("lock", () => post("/vault/lock"))}
             >
               <LockKeyhole size={15} />
-              Lock vault
+              {t("Lock vault")}
             </Button>
           </div>
           <div className="setting-line">
             <div>
-              <strong>Disconnect this dashboard</strong>
+              <strong>{t("Disconnect this dashboard")}</strong>
               <p>
-                Forget this browser session's pairing credential. Your saved
-                information stays in the vault.
+                {t(
+                  "Forget this browser session's pairing credential. Your saved information stays in the vault.",
+                )}
               </p>
             </div>
             <Button className="secondary" onClick={unpair}>
               <LogOut size={15} />
-              Disconnect
+              {t("Disconnect")}
             </Button>
           </div>
         </section>
@@ -2617,6 +2884,7 @@ function NewTask({
     [startUrl, setStartUrl] = useState(""),
     [vision, setVision] = useState(true),
     [reviewText, setReviewText] = useState(false),
+    [reviewEveryImage, setReviewEveryImage] = useState(false),
     [stopBeforeSubmit, setStopBeforeSubmit] = useState(true),
     [mode, setMode] = useState(status.provider.configured ? "remote" : "demo"),
     [loading, setLoading] = useState(true),
@@ -2634,10 +2902,11 @@ function NewTask({
       .finally(() => setLoading(false));
   }, []);
   return (
-    <Modal title="What would you like to get done?" close={close}>
+    <Modal title={t("What would you like to get done?")} close={close}>
       <p className="modal-description">
-        Describe the task and optionally enter a starting website. The agent can
-        open it for you, using only the reviewed information you select.
+        {t(
+          "Describe what you want done. The agent will open the relevant website directly and carry out the task. A visible blue cursor shows its actions.",
+        )}
       </p>
       <form
         onSubmit={(e) => {
@@ -2653,7 +2922,9 @@ function NewTask({
                     : {}),
                 mode,
                 vision: mode === "remote" && vision,
+                language: getLanguage(),
                 review_text: mode === "demo" || reviewText,
+                image_review: reviewEveryImage ? "always" : "sensitive",
                 stop_before_submit: stopBeforeSubmit,
                 record_ids: recordIds,
               }),
@@ -2662,11 +2933,13 @@ function NewTask({
         }}
       >
         <label>
-          Task
+          {t("Task")}
           <textarea
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
-            placeholder="Fill this application using my saved profile and reviewed statement total."
+            placeholder={t(
+              "Find wireless headphones on Amazon, compare three options, and show me the best match.",
+            )}
             required
             rows={4}
             autoFocus
@@ -2694,35 +2967,39 @@ function NewTask({
               })
             }
           >
-            Prepare portal demo
+            {t("Prepare portal demo")}
           </button>
           <p>
-            Starts with only a fictional name, email, and phone. The agent will
-            need details from{" "}
+            {t(
+              "Starts with only a fictional name, email, and phone. The agent will need details from",
+            )}{" "}
             <a
               href="http://127.0.0.1:8766/documents/portal-statement.txt"
               target="_blank"
               rel="noreferrer"
             >
-              this sample statement
+              {t("this sample statement")}
             </a>
             .{" "}
             {status.provider.configured
-              ? "Uses your configured remote model."
-              : "Configure a remote model first. The no-key Demo planner supports the original single form."}
+              ? t("Uses your configured remote model.")
+              : t(
+                  "Configure a remote model first. The no-key Demo planner supports the original single form.",
+                )}
           </p>
         </div>
         <label>
-          Starting website <span className="optional">optional</span>
+          {t("Starting website")}
+          <span className="optional">{t("optional")}</span>
           <input
             type="url"
-            placeholder="https://example.com/application"
+            placeholder={t("https://example.com/application")}
             value={startUrl}
             onChange={(e) => setStartUrl(e.target.value)}
           />
         </label>
         <label>
-          Or use a connected browser tab
+          {t("Or use a connected browser tab")}
           <select
             value={target}
             onChange={(e) => setTarget(e.target.value)}
@@ -2730,10 +3007,8 @@ function NewTask({
           >
             <option value="">
               {loading
-                ? "Loading controlled tabs…"
-                : tabs.length
-                  ? "Use the website URL in my goal"
-                  : "Use the website URL in my goal"}
+                ? t("Loading controlled tabs…")
+                : t("Let the agent choose a website")}
             </option>
             {tabs.map((t) => (
               <option key={t.target_id} value={t.target_id}>
@@ -2747,13 +3022,13 @@ function NewTask({
           <div className="hint">
             <Globe2 size={17} />
             <span>
-              You can start without an open tab. Enter a website URL or include
-              a clear website address in your goal. Demo mode uses the existing
-              form fixture.
+              {t(
+                "Start with just a task. In Remote mode, the agent opens the destination site directly, without Google search. A starting URL or tab is optional. Demo mode uses the existing form fixture.",
+              )}
             </span>
           </div>
         )}
-        <label>Available information · choose reviewed fields</label>
+        <label>{t("Available information · choose reviewed fields")}</label>
         <div className="available-records">
           {records.length ? (
             records.map((r) => (
@@ -2775,17 +3050,21 @@ function NewTask({
             ))
           ) : (
             <p>
-              No saved fields yet. Add your profile or review a document first.
+              {t(
+                "No saved fields yet. Add your profile or review a document first.",
+              )}
             </p>
           )}
         </div>
         <label>
-          Reasoning
+          {t("Reasoning")}
           <select value={mode} onChange={(e) => setMode(e.target.value)}>
-            <option value="demo">Demo planner · no remote model</option>
+            <option value="demo">{t("Demo planner · no remote model")}</option>
             <option value="remote" disabled={!status.provider.configured}>
-              Remote model
-              {!status.provider.configured ? " · configure provider first" : ""}
+              {t("Remote model")}{" "}
+              {!status.provider.configured
+                ? t(" · configure provider first")
+                : ""}
             </option>
           </select>
         </label>
@@ -2798,11 +3077,21 @@ function NewTask({
                 onChange={(e) => setVision(e.target.checked)}
               />
               <span>
-                Visual checkpoints
+                {t("Redacted images at every planning step")}
                 <small>
-                  Review the redacted screenshot before every image send.
+                  {t(
+                    "Screenshots and page text travel together. You review requests that need attention.",
+                  )}
                 </small>
               </span>
+            </label>
+            <label className="check-option">
+              <input
+                type="checkbox"
+                checked={reviewEveryImage}
+                onChange={(e) => setReviewEveryImage(e.target.checked)}
+              />
+              <span>{t("Review every image instead")}</span>
             </label>
             <label className="check-option">
               <input
@@ -2811,9 +3100,11 @@ function NewTask({
                 onChange={(e) => setReviewText(e.target.checked)}
               />
               <span>
-                Also review text-only model requests
+                {t("Also review text-only model requests")}
                 <small>
-                  When off, sanitized text requests can proceed automatically.
+                  {t(
+                    "When off, sanitized text requests can proceed automatically.",
+                  )}
                 </small>
               </span>
             </label>
@@ -2825,22 +3116,23 @@ function NewTask({
             checked={stopBeforeSubmit}
             onChange={(e) => setStopBeforeSubmit(e.target.checked)}
           />
-          <span>Stop before final submission</span>
+          <span>{t("Stop before final submission")}</span>
         </label>
         <div className="hint">
           <ShieldCheck size={18} />
           <span>
-            Starting authorizes the selected details to be entered on the task
-            website.{" "}
+            {t(
+              "Starting authorizes the selected details to be entered on the task website.",
+            )}{" "}
             {stopBeforeSubmit
-              ? "The agent will stop before final submission."
-              : "Consequential actions still need a separate approval."}{" "}
-            The website may receive values as they are filled.
+              ? t("The agent will stop before final submission.")
+              : t("Consequential actions still need a separate approval.")}{" "}
+            {t("The website may receive values as they are filled.")}
           </span>
         </div>
         <div className="modal-actions">
           <Button className="secondary" type="button" onClick={close}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             className="primary"
@@ -2851,7 +3143,7 @@ function NewTask({
             }
           >
             <Play size={15} />
-            Start task
+            {t("Start task")}
           </Button>
         </div>
       </form>
@@ -2914,7 +3206,7 @@ function Modal({
       >
         <div className="modal-heading">
           <h2>{title}</h2>
-          <button aria-label="Close dialog" onClick={close}>
+          <button aria-label={t("Close dialog")} onClick={close}>
             <X size={19} />
           </button>
         </div>

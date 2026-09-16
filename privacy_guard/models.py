@@ -1,10 +1,10 @@
 """Strict public request schemas. Private values never enter action proposals."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .config import DEFAULT_MODEL, DEFAULT_MODEL_BASE_URL
+from .config import DEFAULT_FALLBACK_MODEL, DEFAULT_MODEL, DEFAULT_MODEL_BASE_URL
 
 
 class StrictModel(BaseModel):
@@ -66,7 +66,9 @@ class TaskRequest(StrictModel):
     target_id: str | None = Field(default=None, min_length=1, max_length=200)
     start_url: str | None = Field(default=None, min_length=1, max_length=2000)
     mode: Literal["demo", "remote"] = "demo"
-    vision: bool = False
+    vision: bool = True
+    image_review: Literal["sensitive", "always"] = "sensitive"
+    language: Literal["en", "hi"] = "en"
     stop_before_submit: bool = True
     review_text: bool = False
     record_ids: list[str] | None = Field(default=None, max_length=100)
@@ -99,6 +101,21 @@ class SettingsRequest(StrictModel):
     model: str = Field(default=DEFAULT_MODEL, max_length=200)
     base_url: str = Field(default=DEFAULT_MODEL_BASE_URL, max_length=300)
     api_key: str | None = Field(default=None, max_length=2000)
-    fallback_model: str = Field(default="gpt-4.1-mini", min_length=1, max_length=200)
+    api_keys: list[Annotated[str, Field(min_length=1, max_length=2000)]] | None = Field(default=None, max_length=10)
+    fallback_api_keys: list[Annotated[str, Field(min_length=1, max_length=2000)]] | None = Field(default=None, max_length=10)
+    fallback_model: str = Field(default=DEFAULT_FALLBACK_MODEL, min_length=1, max_length=200)
     fallback_api_key: str | None = Field(default=None, max_length=2000)
-    whisper_api_key: str | None = Field(default=None, max_length=2000)
+
+
+    @model_validator(mode="after")
+    def distinct_key_settings(self):
+        for single, pool in (("api_key", "api_keys"), ("fallback_api_key", "fallback_api_keys")):
+            if single in self.model_fields_set and pool in self.model_fields_set:
+                raise ValueError("Supply either a single key or a key pool, not both")
+            values = getattr(self, pool)
+            if values is not None:
+                cleaned = [value.strip() for value in values]
+                if any(not value or any(c.isspace() for c in value) for value in cleaned):
+                    raise ValueError("Each API key must be nonempty and contain no whitespace")
+                setattr(self, pool, list(dict.fromkeys(cleaned)))
+        return self

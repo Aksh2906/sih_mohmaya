@@ -1,0 +1,150 @@
+{"kind":"deck","id":"pr/ece95s","name":"Deck"}
+{"kind":"layout","layoutId":"456cabfc-393f-4a65-8e3b-8996ecc7bae0","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"59ff9805-2d16-4b43-b65d-ced82884a2e1","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/hlrk2t","slide":1,"title":"Technical Workflow","textShapes":49}
+{"kind":"textbox","id":"sh/l4rql47a","slide":1,"text":"Technical Workflow","textPreview":"Technical Workflow","textChars":18,"textLines":1,"bbox":[0,0,1920,88]}
+{"kind":"textbox","id":"sh/y1g7a9oj","slide":1,"text":"Dev-Privacy Guard · Target Stack","textPreview":"Dev-Privacy Guard · Target Stack","textChars":32,"textLines":1,"bbox":[0,87,1920,46]}
+{"kind":"shape","id":"sh/j29ojup4","slide":1,"name":"Module 1 box","bbox":[30,147,583,242]}
+{"kind":"shape","id":"sh/87ipgj6l","slide":1,"bbox":[55,172,70,70]}
+{"kind":"textbox","id":"sh/t8rqpo76","slide":1,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[55,172,70,70]}
+{"kind":"textbox","id":"sh/6507e9ov","slide":1,"text":"Profile Vault","textPreview":"Profile Vault","textChars":13,"textLines":1,"bbox":[154,176,405,66]}
+{"kind":"shape","id":"sh/7698nep0","slide":1,"bbox":[526,190,49,43]}
+{"kind":"shape","id":"sh/gv2pkj6x","slide":1,"bbox":[526,182,49,18]}
+{"kind":"shape","id":"sh/hwbqto7i","slide":1,"bbox":[526,203,49,18]}
+{"kind":"shape","id":"sh/50vu1wfe","slide":1,"bbox":[569,221,25,24]}
+{"kind":"shape","id":"sh/4zmdsryt","slide":1,"bbox":[574,208,15,21]}
+{"kind":"shape","id":"sh/3ytcz6x8","slide":1,"bbox":[68,271,11,11]}
+{"kind":"textbox","id":"sh/ixkvq1gn","slide":1,"text":"SQLite + AES-GCM","textPreview":"SQLite + AES-GCM","textChars":16,"textLines":1,"bbox":[102,259,492,34]}
+{"kind":"shape","id":"sh/dovu5gfa","slide":1,"bbox":[68,308,11,11]}
+{"kind":"textbox","id":"sh/s3mdwbyp","slide":1,"text":"pypdf + pytesseract","textPreview":"pypdf + pytesseract","textChars":19,"textLines":1,"bbox":[102,296,492,34]}
+{"kind":"shape","id":"sh/r2dc36x4","slide":1,"bbox":[68,345,11,11]}
+{"kind":"textbox","id":"sh/q14vu1gj","slide":1,"text":"Versioned Facts + ref_id","textPreview":"Versioned Facts + ref_id","textChars":24,"textLines":1,"bbox":[102,333,492,34]}
+{"kind":"shape","id":"sh/tsbutcz6","slide":1,"bbox":[613,272,49,0.01]}
+{"kind":"shape","id":"sh/872dk7yl","slide":1,"bbox":[649,263,13,18]}
+{"kind":"shape","id":"sh/kbmdgr6h","slide":1,"name":"Module 2 box","bbox":[668,147,583,242]}
+{"kind":"shape","id":"sh/lcfu9c72","slide":1,"bbox":[693,172,70,70]}
+{"kind":"textbox","id":"sh/y94vehob","slide":1,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[693,172,70,70]}
+{"kind":"textbox","id":"sh/zadc7mpw","slide":1,"text":"Task Orchestration","textPreview":"Task Orchestration","textChars":18,"textLines":1,"bbox":[792,176,405,66]}
+{"kind":"shape","id":"sh/8f6dkr6d","slide":1,"bbox":[1160,178,65,65]}
+{"kind":"shape","id":"sh/9gfedw7y","slide":1,"bbox":[1184,202,17,17]}
+{"kind":"shape","id":"sh/mdoviho7","slide":1,"bbox":[706,271,11,11]}
+{"kind":"textbox","id":"sh/7excbmps","slide":1,"text":"Chrome MV3 + React + TypeScript","textPreview":"Chrome MV3 + React + TypeScript","textChars":31,"textLines":1,"bbox":[740,259,492,34]}
+{"kind":"shape","id":"sh/w36dob6p","slide":1,"bbox":[706,308,11,11]}
+{"kind":"textbox","id":"sh/h4zehwnu","slide":1,"text":"Python + FastAPI + Uvicorn","textPreview":"Python + FastAPI + Uvicorn","textChars":26,"textLines":1,"bbox":[740,296,492,34]}
+{"kind":"shape","id":"sh/ry1g7a9c","slide":1,"bbox":[706,345,11,11]}
+{"kind":"textbox","id":"sh/6xsfe58r","slide":1,"text":"Browser Use 0.13.10","textPreview":"Browser Use 0.13.10","textChars":19,"textLines":1,"bbox":[740,333,492,34]}
+{"kind":"shape","id":"sh/t0jy90r2","slide":1,"bbox":[1251,272,49,0.01]}
+{"kind":"shape","id":"sh/szaxgvqx","slide":1,"bbox":[1287,263,13,18]}
+{"kind":"shape","id":"sh/jahg3q90","slide":1,"name":"Module 3 box","bbox":[1306,147,583,242]}
+{"kind":"shape","id":"sh/i98fal8f","slide":1,"bbox":[1331,172,70,70]}
+{"kind":"textbox","id":"sh/5cjy50r6","slide":1,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1331,172,70,70]}
+{"kind":"textbox","id":"sh/4bqxcvql","slide":1,"text":"Observation + Cache","textPreview":"Observation + Cache","textChars":19,"textLines":1,"bbox":[1430,176,405,66]}
+{"kind":"shape","id":"sh/36lgfupk","slide":1,"bbox":[1804,180,44,57]}
+{"kind":"shape","id":"sh/25czmp8z","slide":1,"bbox":[1834,180,0.01,14]}
+{"kind":"shape","id":"sh/adsja943","slide":1,"bbox":[1834,194,14,0.01]}
+{"kind":"shape","id":"sh/be1k3e5o","slide":1,"bbox":[1813,202,20,0.01]}
+{"kind":"shape","id":"sh/cfa1cjm9","slide":1,"bbox":[1813,212,16,0.01]}
+{"kind":"shape","id":"sh/xgj25onu","slide":1,"bbox":[1832,216,29,29]}
+{"kind":"shape","id":"sh/2p8j6947","slide":1,"bbox":[1856,240,14,14]}
+{"kind":"shape","id":"sh/na1kze5s","slide":1,"bbox":[1344,271,11,11]}
+{"kind":"textbox","id":"sh/oba18jmx","slide":1,"text":"DOM + ARIA + CDP","textPreview":"DOM + ARIA + CDP","textChars":16,"textLines":1,"bbox":[1378,259,492,34]}
+{"kind":"shape","id":"sh/pcj214ni","slide":1,"bbox":[1344,308,11,11]}
+{"kind":"textbox","id":"sh/6lcjit4b","slide":1,"text":"MutationObserver + Region Cache","textPreview":"MutationObserver + Region Cache","textChars":31,"textLines":1,"bbox":[1378,296,492,34]}
+{"kind":"shape","id":"sh/76lkby5w","slide":1,"bbox":[1344,345,11,11]}
+{"kind":"textbox","id":"sh/h0nmhs7y","slide":1,"text":"Page Epoch + Feature Reuse","textPreview":"Page Epoch + Feature Reuse","textChars":26,"textLines":1,"bbox":[1378,333,492,34]}
+{"kind":"shape","id":"sh/gfe58n6d","slide":1,"name":"Module 4 box","bbox":[30,464,583,242]}
+{"kind":"shape","id":"sh/ve54f2ps","slide":1,"bbox":[55,489,70,70]}
+{"kind":"textbox","id":"sh/udwn6xon","slide":1,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[55,489,70,70]}
+{"kind":"textbox","id":"sh/tcnmds72","slide":1,"text":"Local Perception","textPreview":"Local Perception","textChars":16,"textLines":1,"bbox":[154,493,405,66]}
+{"kind":"shape","id":"sh/8be54n6h","slide":1,"bbox":[522,504,62,46]}
+{"kind":"shape","id":"sh/7a54bipw","slide":1,"bbox":[543,517,20,20]}
+{"kind":"shape","id":"sh/69w32dob","slide":1,"bbox":[68,575,11,11]}
+{"kind":"textbox","id":"sh/d8rmpc76","slide":1,"text":"MobileViT-Small*","textPreview":"MobileViT-Small*","textChars":16,"textLines":1,"bbox":[102,563,492,34]}
+{"kind":"shape","id":"sh/s7y5gr6l","slide":1,"bbox":[68,609,11,11]}
+{"kind":"textbox","id":"sh/cnqx8fi9","slide":1,"text":"MediaPipe BlazeFace*","textPreview":"MediaPipe BlazeFace*","textChars":20,"textLines":1,"bbox":[102,597,492,34]}
+{"kind":"shape","id":"sh/xozy1kze","slide":1,"bbox":[68,643,11,11]}
+{"kind":"textbox","id":"sh/al8f6p03","slide":1,"text":"Tesseract.js*","textPreview":"Tesseract.js*","textChars":13,"textLines":1,"bbox":[102,631,492,34]}
+{"kind":"shape","id":"sh/bmhgzaho","slide":1,"bbox":[68,677,11,11]}
+{"kind":"textbox","id":"sh/ojqx4fix","slide":1,"text":"ONNX Runtime Web + WebGPU / WASM","textPreview":"ONNX Runtime Web + WebGPU / WASM","textChars":32,"textLines":1,"bbox":[102,665,492,34]}
+{"kind":"shape","id":"sh/pkzyxkzi","slide":1,"bbox":[613,589,49,0.01]}
+{"kind":"shape","id":"sh/2xof250r","slide":1,"bbox":[649,580,13,18]}
+{"kind":"shape","id":"sh/nihgvahc","slide":1,"name":"Module 5 box","bbox":[668,464,583,242]}
+{"kind":"shape","id":"sh/0v6x0vi1","slide":1,"bbox":[693,489,70,70]}
+{"kind":"textbox","id":"sh/1wfyt0zm","slide":1,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[693,489,70,70]}
+{"kind":"textbox","id":"sh/3qdg3ql8","slide":1,"text":"Privacy Filter","textPreview":"Privacy Filter","textChars":14,"textLines":1,"bbox":[792,493,405,66]}
+{"kind":"shape","id":"sh/ip4zalkn","slide":1,"bbox":[1163,501,59,63]}
+{"kind":"shape","id":"sh/5sfy503e","slide":1,"bbox":[706,588,11,11]}
+{"kind":"textbox","id":"sh/4r6hcv2t","slide":1,"text":"DOM Rules + Regex + PII","textPreview":"DOM Rules + Regex + PII","textChars":23,"textLines":1,"bbox":[740,576,492,34]}
+{"kind":"shape","id":"sh/ruxg7al4","slide":1,"bbox":[706,625,11,11]}
+{"kind":"textbox","id":"sh/qtoze5kz","slide":1,"text":"Confidence-Aware Pixel Masks","textPreview":"Confidence-Aware Pixel Masks","textChars":28,"textLines":1,"bbox":[740,613,492,34]}
+{"kind":"shape","id":"sh/dgfy9k3a","slide":1,"bbox":[706,662,11,11]}
+{"kind":"textbox","id":"sh/sv6hgf2p","slide":1,"text":"Text + URL + History Sanitization","textPreview":"Text + URL + History Sanitization","textChars":33,"textLines":1,"bbox":[740,650,492,34]}
+{"kind":"shape","id":"sh/fihgbalg","slide":1,"bbox":[1251,589,49,0.01]}
+{"kind":"shape","id":"sh/ehozi5kv","slide":1,"bbox":[1287,580,13,18]}
+{"kind":"shape","id":"sh/m5o369gz","slide":1,"name":"Module 6 box","bbox":[1306,464,583,242]}
+{"kind":"shape","id":"sh/n6xkzehk","slide":1,"bbox":[1331,489,70,70]}
+{"kind":"textbox","id":"sh/o76l8jy5","slide":1,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1331,489,70,70]}
+{"kind":"textbox","id":"sh/98f21ozq","slide":1,"text":"HITL + Masking","textPreview":"HITL + Masking","textChars":14,"textLines":1,"bbox":[1430,493,405,66]}
+{"kind":"shape","id":"sh/ato3a9gb","slide":1,"bbox":[1819,499,25,25]}
+{"kind":"shape","id":"sh/buxk3ehw","slide":1,"bbox":[1808,531,49,29]}
+{"kind":"shape","id":"sh/wv6lcjyh","slide":1,"bbox":[1344,588,11,11]}
+{"kind":"textbox","id":"sh/xwf25ozm","slide":1,"text":"Screenshot + Context Preview","textPreview":"Screenshot + Context Preview","textChars":28,"textLines":1,"bbox":[1378,576,492,34]}
+{"kind":"shape","id":"sh/ix83etg7","slide":1,"bbox":[1344,625,11,11]}
+{"kind":"textbox","id":"sh/jyhk7yhs","slide":1,"text":"Manual Masks + Approval","textPreview":"Manual Masks + Approval","textChars":23,"textLines":1,"bbox":[1378,613,492,34]}
+{"kind":"shape","id":"sh/tsj6dsju","slide":1,"bbox":[1344,662,11,11]}
+{"kind":"textbox","id":"sh/sra54nip","slide":1,"text":"Payload Hash + Provider Binding","textPreview":"Payload Hash + Provider Binding","textChars":31,"textLines":1,"bbox":[1378,650,492,34]}
+{"kind":"shape","id":"sh/7q14bi14","slide":1,"name":"Module 7 box","bbox":[30,781,583,242]}
+{"kind":"shape","id":"sh/6psn2d0j","slide":1,"bbox":[55,806,70,70]}
+{"kind":"textbox","id":"sh/hw36hcj6","slide":1,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[55,806,70,70]}
+{"kind":"textbox","id":"sh/gva587il","slide":1,"text":"Self-Hosted Reasoning","textPreview":"Self-Hosted Reasoning","textChars":21,"textLines":1,"bbox":[154,810,405,66]}
+{"kind":"shape","id":"sh/fu1of210","slide":1,"bbox":[527,826,28,42]}
+{"kind":"shape","id":"sh/utsn6x0f","slide":1,"bbox":[554,826,28,42]}
+{"kind":"shape","id":"sh/pk36lcj2","slide":1,"bbox":[534,815,25,30]}
+{"kind":"shape","id":"sh/4ju5c7ih","slide":1,"bbox":[552,815,25,30]}
+{"kind":"shape","id":"sh/1wfy1o7y","slide":1,"bbox":[554,821,0.01,53]}
+{"kind":"shape","id":"sh/0vmx8j6d","slide":1,"bbox":[68,905,11,11]}
+{"kind":"textbox","id":"sh/fudgzyps","slide":1,"text":"LFM2.5-VL-1.6B*","textPreview":"LFM2.5-VL-1.6B*","textChars":15,"textLines":1,"bbox":[102,893,492,34]}
+{"kind":"shape","id":"sh/et4f6to7","slide":1,"bbox":[68,942,11,11]}
+{"kind":"textbox","id":"sh/9kfy587u","slide":1,"text":"PyTorch + Transformers","textPreview":"PyTorch + Transformers","textChars":22,"textLines":1,"bbox":[102,930,492,34]}
+{"kind":"shape","id":"sh/oj6hc369","slide":1,"bbox":[68,979,11,11]}
+{"kind":"textbox","id":"sh/nixg3yp4","slide":1,"text":"JSON Actions + input_ref","textPreview":"JSON Actions + input_ref","textChars":24,"textLines":1,"bbox":[102,967,492,34]}
+{"kind":"shape","id":"sh/2hofatoj","slide":1,"bbox":[613,906,49,0.01]}
+{"kind":"shape","id":"sh/xozy9876","slide":1,"bbox":[649,897,13,18]}
+{"kind":"shape","id":"sh/wnqhgn6l","slide":1,"name":"Module 8 box","bbox":[668,781,583,242]}
+{"kind":"shape","id":"sh/ut0vu5o3","slide":1,"bbox":[693,806,70,70]}
+{"kind":"textbox","id":"sh/vu9c3a5o","slide":1,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[693,806,70,70]}
+{"kind":"textbox","id":"sh/gvidwfm9","slide":1,"text":"Local Execution","textPreview":"Local Execution","textChars":15,"textLines":1,"bbox":[792,810,405,66]}
+{"kind":"shape","id":"sh/hwre5kne","slide":1,"bbox":[1161,816,67,53]}
+{"kind":"shape","id":"sh/ixkvyp4z","slide":1,"bbox":[1177,832,12,22]}
+{"kind":"shape","id":"sh/3ytw7u5k","slide":1,"bbox":[1197,855,16,0.01]}
+{"kind":"shape","id":"sh/4z2d0zm5","slide":1,"bbox":[706,905,11,11]}
+{"kind":"textbox","id":"sh/50be9knq","slide":1,"text":"Pydantic + Action Policy","textPreview":"Pydantic + Action Policy","textChars":24,"textLines":1,"bbox":[740,893,492,34]}
+{"kind":"shape","id":"sh/q1kv2p4b","slide":1,"bbox":[706,942,11,11]}
+{"kind":"textbox","id":"sh/r2twbu5w","slide":1,"text":"Vault Resolution + CDP","textPreview":"Vault Resolution + CDP","textChars":22,"textLines":1,"bbox":[740,930,492,34]}
+{"kind":"shape","id":"sh/nqdczulo","slide":1,"bbox":[706,979,11,11]}
+{"kind":"textbox","id":"sh/2p4vqpk3","slide":1,"text":"Origin + Tab + Epoch Checks","textPreview":"Origin + Tab + Epoch Checks","textChars":27,"textLines":1,"bbox":[740,967,492,34]}
+{"kind":"shape","id":"sh/psvu143u","slide":1,"bbox":[1251,906,49,0.01]}
+{"kind":"shape","id":"sh/ormdsz29","slide":1,"bbox":[1287,897,13,18]}
+{"kind":"shape","id":"sh/f2tcvuls","slide":1,"name":"Module 9 box","bbox":[1306,781,583,242]}
+{"kind":"shape","id":"sh/e1kbmpk7","slide":1,"bbox":[1331,806,70,70]}
+{"kind":"textbox","id":"sh/14vux43y","slide":1,"text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1331,806,70,70]}
+{"kind":"textbox","id":"sh/032toz2d","slide":1,"text":"Resume + Verify","textPreview":"Resume + Verify","textChars":15,"textLines":1,"bbox":[1430,810,405,66]}
+{"kind":"shape","id":"sh/rytcralg","slide":1,"bbox":[1804,814,44,57]}
+{"kind":"shape","id":"sh/qxkbi5kb","slide":1,"bbox":[1834,814,0.01,14]}
+{"kind":"shape","id":"sh/wry1crex","slide":1,"bbox":[1834,828,14,0.01]}
+{"kind":"shape","id":"sh/hs7i5wf2","slide":1,"bbox":[1813,836,20,0.01]}
+{"kind":"shape","id":"sh/upwjahwr","slide":1,"bbox":[1813,846,16,0.01]}
+{"kind":"shape","id":"sh/vq503mxc","slide":1,"bbox":[1832,852,34,34]}
+{"kind":"shape","id":"sh/4vy1gret","slide":1,"bbox":[1840,861,19,15]}
+{"kind":"shape","id":"sh/5w7i9wfe","slide":1,"bbox":[1344,905,11,11]}
+{"kind":"textbox","id":"sh/itgje1wn","slide":1,"text":"Document Intake + Fact Review","textPreview":"Document Intake + Fact Review","textChars":29,"textLines":1,"bbox":[1378,893,492,34]}
+{"kind":"shape","id":"sh/jup07mx8","slide":1,"bbox":[1344,942,11,11]}
+{"kind":"textbox","id":"sh/kzuh47ep","slide":1,"text":"Pause / Resume + Final Approval","textPreview":"Pause / Resume + Final Approval","textChars":31,"textLines":1,"bbox":[1378,930,492,34]}
+{"kind":"shape","id":"sh/l0nixcfa","slide":1,"bbox":[1344,979,11,11]}
+{"kind":"textbox","id":"sh/dszitwjq","slide":1,"text":"Latency + Cache-Hit Metrics","textPreview":"Latency + Cache-Hit Metrics","textChars":27,"textLines":1,"bbox":[1378,967,492,34]}
+{"kind":"shape","id":"sh/crq10ri5","slide":1,"bbox":[321,389,1276,69]}
+{"kind":"shape","id":"sh/r6h0rm1k","slide":1,"bbox":[312,446,18,13]}
+{"kind":"shape","id":"sh/q58jyh0z","slide":1,"bbox":[321,706,1276,69]}
+{"kind":"shape","id":"sh/p4zipwje","slide":1,"bbox":[312,763,18,13]}
+{"kind":"textbox","id":"sh/43q1writ","slide":1,"text":"* Proposed models/OCR solutions — runtime validation pending. Raw data local.","textPreview":"* Proposed models/OCR solutions — runtime validation pending. Raw data local.","textChars":77,"textLines":1,"bbox":[0,1034,1920,36]}
+{"kind":"notes","id":"nt/hlrk2t","slide":1,"text":"Recreated from the supplied technical workflow as native editable shapes, text, and connectors. Starred model/OCR choices are proposals pending runtime validation."}

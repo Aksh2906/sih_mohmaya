@@ -1,6 +1,6 @@
 # Set up Dev Privacy Guard v0.2
 
-This checkout targets the existing Apple M1 Mac with macOS 15 and 8 GB RAM. The dashboard, vault, document processing and Browser Use agent run locally. Reasoning uses your hosted LLM/VLM API; optional voice transcription uses OpenAI Whisper.
+This checkout targets the existing Apple M1 Mac with macOS 15 and 8 GB RAM. The dashboard, vault, document processing and Browser Use agent run locally. Reasoning uses your hosted LLM/VLM API; voice transcription uses local multilingual faster-whisper without an API key.
 
 Already installed? Follow [startup.md](startup.md) for the short launch guide. The start script uses `.venv/bin/python` directly; activating the environment or running verification is not required to start the app.
 
@@ -51,31 +51,34 @@ Default application data: `~/Library/Application Support/Dev Privacy Guard`. Doc
 Open **Settings** in the unlocked dashboard.
 
 - Choose **Remote** reasoning mode.
-- Use the default model ID: `gemini-2.5-flash` (Gemini 2.5 Flash).
-- Use the default API base URL: `https://generativelanguage.googleapis.com/v1beta/openai`.
-- Enter your Gemini API key and save. Previously saved provider settings override defaults; update their model and URL to the values above.
+- Use the default model ID: `google/gemini-2.5-flash` (Gemini 2.5 Flash through OpenRouter).
+- Use the default API base URL: `https://openrouter.ai/api/v1`.
+- Enter your [OpenRouter API keys](https://openrouter.ai/settings/keys), using **Add another key** for up to 10 keys, and save. On unlock, legacy direct-Gemini credentials move to fallback; legacy direct-OpenAI reasoning credentials are cleared. Enter a new primary OpenRouter key.
 
 The model must accept **Chat Completions, JSON object output and image inputs** for the screenshot workflow. A text-only model can be used only with visual checkpoints disabled. This project does not train or host an LLM, and a configured model is not a guarantee of successful automation on every website.
 
-Keys are encrypted locally and are never placed in the extension or frontend bundle. The model adapter sends sanitized text automatically unless you enable text review. Every request containing a screenshot waits for your approval. Unnecessary auxiliary model calls and unreviewed image retries are disabled. Optionally save a separate OpenAI key under **Optional fallback · OpenAI**; remote tasks may switch once after a primary-provider error. Image requests require fresh approval for OpenAI. Without a fallback key, only Gemini is used.
+Keys are encrypted locally and are never placed in the extension or frontend bundle. The model adapter sends sanitized text automatically unless you enable text review. Every request containing a screenshot waits for your approval. Unnecessary auxiliary model calls and unreviewed image retries are disabled. Optionally save a [Google AI Studio API key](https://aistudio.google.com/apikey) under **Optional fallback · Gemini**, with model `gemini-2.5-flash`. Remote tasks may switch once to the direct Gemini API after a primary-provider error (including exhausted OpenRouter credits). Image requests require fresh approval for Gemini. Without a fallback key, only OpenRouter is used.
 
-## 5. Optional: enable voice input
+You can save up to 10 keys in each provider pool. The agent tries the next key on key-related or transient failures, then switches from OpenRouter to Gemini when needed. Blank rows keep the saved pool; entering keys replaces it. Use **Check saved keys** after saving to test every slot with a small synthetic JSON request before your demo. This consumes provider credits. A successful text check does not prove image support or full task success. Gemini keys in the same project share quota, and OpenRouter keys may share account credits.
 
-In **Settings → Voice transcription**, enter an **OpenAI Whisper API key** and save. You may use the same OpenAI account/key as your reasoning model, but this is a separate setting because the reasoning provider may be different.
+Gemini requests omit the unsupported `store` field. If a request still returns 400, the dashboard now classifies the error; generic malformed requests are not retried with every key. Check the Gemini model name (for example `gemini-2.5-flash`, without `google/`), key restrictions and Google AI Studio billing/project setup.
 
-Voice uses `whisper-1` at OpenAI's audio transcription endpoint. The flow is:
+## 5. Local English/Hindi voice input
 
-1. Choose **Record task** (dashboard) or the extension's voice control.
-2. Grant microphone permission when the browser asks. The extension uses a dedicated recording tab.
-3. Speak, then stop. Recordings are limited to 60 seconds and 10 MiB.
-4. Listen to or discard the local recording.
-5. Choose **Transcribe with Whisper**. **This uploads the original, unredacted audio to OpenAI.**
-6. Review and edit the returned text. In the extension, choose **Use transcript** to place it into the task draft.
-7. Start the task yourself when the edited instruction and selected records are correct.
+Setup installs multilingual Whisper small weights once. For an existing checkout, run:
 
-No task starts merely because transcription finished. The application does not automatically save recordings or transcripts to the vault. Editing a transcript does not undo the audio upload. The later task instruction passes through the normal model-context text filter.
+```sh
+uv sync
+.venv/bin/python scripts/speech_install.py
+```
 
-If microphone access is denied, allow it in the browser's site/extension permissions and macOS **System Settings → Privacy & Security → Microphone**, then reopen the recording surface. Typed instructions always work without a Whisper key. **Remove Whisper key** clears only the voice credential.
+The initial public model download requires internet access. Transcription loads only local files, runs on the CPU, and never uploads recordings or requires an API key. The default model lives under the companion data directory in `models/whisper-small`; `GUARD_SPEECH_MODEL` can select a local compatible model directory. Old stored Whisper API keys are removed on unlock.
+
+Choose **Record task** (dashboard) or **Record voice task** (extension), grant microphone permission, speak in English or Hindi, and stop. Recordings are limited to 60 seconds and 10 MiB. Listen to the recording, choose **Transcribe locally**, and edit the returned text. In the extension, choose **Use transcript in task** to place it in the task draft. Start the task explicitly when the text and selected records are correct.
+
+Audio and drafts are kept in memory, are not automatically saved to the vault, and are discarded when their recording surface closes. Locking the vault cancels local recognition. If microphone permission is denied, check browser and macOS microphone permissions. Typed input remains available.
+
+Use **Language / भाषा** to switch the dashboard or extension interface between English and Hindi. Both accept English, Hindi and mixed-language task input. The main agent receives a structured execution brief preserving the original request and the selected response language.
 
 ## 6. Launch Chromium and load the extension
 
@@ -100,9 +103,9 @@ Use a **Remote** model for this flow. A real API key is required for live planni
 1. Open **New task → Prepare portal demo**. This adds synthetic name/email/phone records and selects only those records, leaving the document fields for the missing-information round.
 2. Use `http://127.0.0.1:8766/portal.html` as the starting website. The form does not have to be open beforehand.
 3. Enter or dictate: `Open this website and complete the application using my selected profile. Fill available details first, ask for missing documents, and stop before final submission.`
-4. Keep **visual checkpoints** and **stop before final submission** enabled. Start the task.
+4. Keep **Redacted images at every planning step** and **stop before final submission** enabled. Start the task.
 5. Follow the task activity. Approve reviewed navigation clicks if requested.
-6. At a screenshot checkpoint, open dashboard review. Compare the original local image with the actual redacted outgoing image. Drag rectangles or use the numeric controls to add masks, then apply them. Each edit replaces the approval.
+6. At a screenshot checkpoint, review in the extension or dashboard. Compare the original local image with the actual redacted outgoing image. Drag rectangles or use the numeric controls to add masks, then apply them. Each edit replaces the approval.
 7. Approve the latest image/context, or deny to block transmission.
 8. When information is requested, upload `demo/documents/portal-statement.txt` in **Documents**. Review the PAN, address and statement total. Confirm the appropriate facts; choose profile scope only for reusable details.
 9. Return to the waiting task, select the newly confirmed records alongside the original selected profile, and Resume.
@@ -137,7 +140,7 @@ After a service restart, pair and unlock again. Unfinished tasks remain stopped.
 ./scripts/verify.sh
 ```
 
-The checks use synthetic data. Hosted model and Whisper responses are mocked unless explicitly configured for a live run. See [docs/VALIDATION.md](docs/VALIDATION.md) for exact evidence and opt-in browser checks.
+The checks use synthetic data. Hosted model responses and most speech tests are mocked unless explicitly configured for a live run. See [docs/VALIDATION.md](docs/VALIDATION.md) for exact evidence and opt-in browser checks.
 
 After changing dashboard sources:
 
@@ -156,8 +159,8 @@ Refresh the dashboard. After extension source changes, use **Reload** on its `ch
 | Browser missing | Run `uv run scripts/browser_install.py` from the project directory. |
 | Current tab is not controllable | Use the dedicated Chromium, or provide a starting URL to create a controlled tab. |
 | Model returns an error | Check API credit, key, model ID, image support and Chat Completions JSON support. No action is authorized by a failed response. |
-| Whisper is not configured | Save the separate OpenAI key in Settings. Typed tasks remain available. |
-| Whisper error or empty transcript | Record a shorter command or type it. No browser task has started. |
+| Local speech model is missing | Run `.venv/bin/python scripts/speech_install.py`, then refresh Settings. |
+| Local transcription error or empty transcript | Record a shorter command or type it. No browser task has started. |
 | Image approval changed | Reload the current preview and approve its newest version. Old approval IDs cannot authorize edited images. |
 | Screenshot geometry cannot be verified | Let the page settle, stop animations if possible, and retry from fresh state. No uncertain image is sent. |
 | Missing information repeats | Select the confirmed record in the task's available-information list before Resume; remove ambiguous duplicates from the selection. |

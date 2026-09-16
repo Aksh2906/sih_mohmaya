@@ -65,6 +65,12 @@ def _normalize_text(text: str) -> str:
     return value
 
 
+def _inside_redaction(value: str, match: re.Match) -> bool:
+    """Exempt only matches wholly inside a fixed marker, never adjacent data."""
+    start = value.rfind(REDACTED, 0, match.start() + len(REDACTED))
+    return start >= 0 and match.end() <= start + len(REDACTED)
+
+
 def contains_private_text(text: str, private: list[str], *, min_length: int = 3) -> bool:
     """Check known values through JSON/Unicode/URL escapes without changing text.
 
@@ -85,7 +91,9 @@ def contains_private_text(text: str, private: list[str], *, min_length: int = 3)
     for _ in range(17):
         previous = value
         value = _normalize_text(value)
-        if pattern.search(value):
+        # The fixed masking marker is protocol text, not an occurrence of a
+        # saved value (for example the name "Ted" inside "REDACTED").
+        if any(not _inside_redaction(value, match) for match in pattern.finditer(value)):
             return True
         decoded = _JSON_ESCAPE_RUN.sub(lambda match: json.loads('"' + match.group(0) + '"'), value)
         if decoded == previous:
@@ -127,7 +135,11 @@ def _sanitize_text(text: str, pattern: re.Pattern | None, depth: int) -> str:
     # Normalize common encodings before matching; this also catches encoded URLs.
     value = _normalize_text(text)
     if pattern:
-        value = pattern.sub(REDACTED, value)
+        # Redaction is applied repeatedly to observations/history. Preserve
+        # existing markers instead of recursively redacting their own letters.
+        value = pattern.sub(
+            lambda match: match.group(0) if _inside_redaction(value, match) else REDACTED, value
+        )
 
     def clean_token(match):
         # Native history mixes prose with JSON. Decode valid string tokens so

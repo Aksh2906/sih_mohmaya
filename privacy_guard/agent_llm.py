@@ -1,9 +1,10 @@
 """Single audited HTTP boundary for Browser Use's native message protocol.
 
 Native images are never forwarded. Only an immutable artifact produced by the
-local screenshot filter can enter this transport, after exact-payload approval.
+local screenshot filter can enter this transport, under the task review policy.
 """
 
+import asyncio
 import json
 import re
 import time
@@ -11,9 +12,21 @@ from copy import deepcopy
 
 import httpx
 
+from .config import FALLBACK_BASE_URL
 from .diagnostics import logger, traced
 from .gateway import canonical, digest, validate_endpoint
 from .privacy import _safe_url, contains_private_text, sanitize_text
+from .provider_errors import classify_error, completion_options
+from .review_classifier import requires_review
+
+SCHEMA_INSTRUCTION = "Return exactly one JSON object satisfying this schema. No markdown. "
+SCREENSHOT_INSTRUCTION = (
+    "Locally redacted screenshot. Use the accompanying sanitized DOM and local element indices to act. Black rectangles conceal private information; never infer concealed values."
+)
+
+
+class UnusableModelResponse(ValueError):
+    """A model response failed before any requested browser action executed."""
 
 
 def sanitize_agent_text(value, private):
@@ -42,18 +55,26 @@ class GuardedChatModel:
         self.runtime = runtime
         self.model = runtime.manager.gateway.model
         self.base_url = validate_endpoint(runtime.manager.gateway.base_url)
+        self._keys = tuple(runtime.manager.gateway.api_keys)
+        self._key_index = 0
         self._api_key = runtime.manager.gateway.api_key
         self._fallback = False
         self._settings = self._settings_snapshot()
+        # Only schemas generated locally by prepare() are trusted protocol text.
+        # Keep exact copies across action, site-selection and visual requests.
+        self._schema_messages: set[str] = set()
 
     def _settings_snapshot(self):
         gateway = self.runtime.manager.gateway
-        return (gateway.model, validate_endpoint(gateway.base_url), gateway.api_key,
-                gateway.fallback_model, gateway.fallback_api_key)
+        return (gateway.model, validate_endpoint(gateway.base_url), tuple(gateway.api_keys),
+                gateway.fallback_model, tuple(gateway.fallback_api_keys))
 
     @property
     def name(self):
         return self.model
+
+    async def requires_review(self, kind, candidate, private, artifact=None):
+        return await requires_review(self, kind, candidate, private, artifact)
 
     @property
     def model_name(self):
@@ -61,6 +82,7 @@ class GuardedChatModel:
 
     def _messages(self, messages, private):
         cleaned = []
+        browser_state_added = False
         for message in messages:
             message = message.model_dump() if hasattr(message, "model_dump") else message
             role = message.get("role")
@@ -76,6 +98,9 @@ class GuardedChatModel:
             # or values absent from our local observer. Replace the whole state
             # message, including native metadata, rather than filtering fragments.
             if role == "user" and "<browser_state>" in content:
+                if browser_state_added:
+                    continue
+                browser_state_added = True
                 content = "<browser_state>\n" + self.runtime.model_observation() + "\n</browser_state>"
             try:
                 structured = json.loads(content)
@@ -97,14 +122,13 @@ class GuardedChatModel:
         if schema:
             # json_object works with Browser Use's dynamically generated action
             # union, whose optional fields do not satisfy OpenAI strict schemas.
+            schema_message = SCHEMA_INSTRUCTION + json.dumps(schema, ensure_ascii=False)
+            self._schema_messages.add(schema_message)
             cleaned.insert(
                 0,
                 {
                     "role": "system",
-                    "content": (
-                        "Return exactly one JSON object satisfying this schema. No markdown. "
-                        + json.dumps(schema, ensure_ascii=False)
-                    ),
+                    "content": schema_message,
                 },
             )
         if artifact:
@@ -115,7 +139,7 @@ class GuardedChatModel:
                     "content": [
                         {
                             "type": "text",
-                            "text": "User-approved redacted screenshot. Black rectangles conceal private information; never infer concealed values.",
+                            "text": SCREENSHOT_INSTRUCTION,
                         },
                         {"type": "image_url", "image_url": {"url": artifact["data_url"]}},
                     ],
@@ -124,33 +148,43 @@ class GuardedChatModel:
         payload = {
             "model": self.model,
             "messages": cleaned,
-            "response_format": {"type": "json_object"},
-            "max_completion_tokens": 2400,
-            "store": False,
+            **completion_options(self.base_url),
         }
         self.check(payload, private, artifact)
         return payload
 
     def check(self, payload, private, artifact=None):
-        if set(payload) != {"model", "messages", "response_format", "max_completion_tokens", "store"}:
+        options = completion_options(self.base_url)
+        if set(payload) != {"model", "messages", *options}:
             raise ValueError("Unexpected model envelope")
-        if payload["store"] is not False or payload["response_format"] != {"type": "json_object"}:
+        if any(payload[key] != value or type(payload[key]) is not type(value) for key, value in options.items()):
             raise ValueError("Unexpected model options")
         if payload["max_completion_tokens"] != 2400 or payload["model"] != self.model:
             raise ValueError("Model settings changed")
         texts, images = [payload["model"]], []
-        for message in payload["messages"]:
+        for position, message in enumerate(payload["messages"]):
             if set(message) != {"role", "content"} or message["role"] not in ("system", "user", "assistant"):
                 raise ValueError("Unexpected message metadata")
             content = message["content"]
             if isinstance(content, str):
+                if position == 0 and message["role"] == "system" and content.startswith(SCHEMA_INSTRUCTION):
+                    if content not in self._schema_messages:
+                        raise ValueError("The model request schema was altered")
+                    # Limits, property names and tool descriptions come from
+                    # local code, not the vault/page. Scanning them as personal
+                    # data rejects innocent matches such as maxLength: 100.
+                    continue
                 texts.append(content)
                 continue
             if not isinstance(content, list):
                 raise ValueError("Invalid message content")
             for part in content:
                 if set(part) == {"type", "text"} and part["type"] == "text":
-                    texts.append(part["text"])
+                    if not (
+                        artifact and position == len(payload["messages"]) - 1
+                        and message["role"] == "user" and part["text"] == SCREENSHOT_INSTRUCTION
+                    ):
+                        texts.append(part["text"])
                 elif set(part) == {"type", "image_url"} and part["type"] == "image_url":
                     if set(part["image_url"]) != {"url"}:
                         raise ValueError("Unexpected image metadata")
@@ -174,30 +208,75 @@ class GuardedChatModel:
         self.runtime.check()
         if digest(payload) != approved_hash:
             raise ValueError("Model payload changed after review")
+        if artifact and (artifact["mask_report"].get("requires_manual_review")
+                         or (self.runtime.image_state or {}).get("force_review")):
+            state = self.runtime.image_state
+            if not state or state.get("reviewed_hash") != approved_hash:
+                raise PermissionError("Screenshot recovery requires approval of this exact screenshot and text.")
         gateway = self.runtime.manager.gateway
         if self._settings_snapshot() != self._settings or not self._api_key:
             raise ValueError("Model settings changed; start a fresh task")
         self.check(payload, private + self.runtime.private(), artifact)
         endpoint = self.base_url + "/chat/completions"
         started = time.monotonic()
-        try:
-            async with httpx.AsyncClient(timeout=90, follow_redirects=False, trust_env=False) as client:
-                response = await client.post(
-                    endpoint,
-                    content=canonical(payload),
-                    headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
-                )
-        except httpx.TransportError:
-            logger.warning("model.transport_failed", exc_info=True)
-            if self._fallback or not gateway.fallback_api_key:
-                raise
+        response = None
+        reason = "Model connection failed"
+        allow_fallback = True
+        deadline = time.monotonic() + 90
+        for index in range(self._key_index, len(self._keys)):
             self.runtime.check()
-            return await self._send_fallback(payload, private, artifact, "Model connection failed")
-        self.runtime.check()
-        logger.info("model.response status=%s", response.status_code)
-        if response.status_code != 200:
-            reason = f"Model request failed (HTTP {response.status_code}); check Settings"
-            if response.status_code in (400, 401, 403, 404, 408, 429) or response.status_code >= 500:
+            if self._settings_snapshot() != self._settings:
+                raise ValueError("Model settings changed; start a fresh task")
+            if digest(payload) != approved_hash:
+                raise ValueError("Model payload changed after review")
+            self.check(payload, private + self.runtime.private(), artifact)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            self._key_index = index
+            self._api_key = self._keys[index]
+            provider = "Gemini" if self.base_url == FALLBACK_BASE_URL else "Primary provider"
+            delay = min(0.5 * 2 ** index, 4)
+            try:
+                async with asyncio.timeout(min(30, remaining)), httpx.AsyncClient(
+                    timeout=min(30, remaining), follow_redirects=False, trust_env=False,
+                ) as client:
+                    response = await client.post(
+                        endpoint, content=canonical(payload),
+                        headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
+                    )
+            except (httpx.TransportError, TimeoutError):
+                logger.warning("model.transport_failed provider=%s key_slot=%s", provider, index + 1)
+                reason = provider + " connection failed; check your network or try another provider"
+                rotate = True
+                response = None
+            else:
+                self.runtime.check()
+                logger.info("model.response provider=%s key_slot=%s status=%s", provider, index + 1, response.status_code)
+                if response.status_code == 200:
+                    break
+                failure = classify_error(response)
+                reason = failure.describe(provider, response.status_code)
+                rotate = failure.rotate_key
+                allow_fallback = (response.status_code in (400, 401, 402, 403, 404, 408, 429)
+                                  or 500 <= response.status_code < 600) and failure.category != "content_blocked"
+                logger.warning("model.failure category=%s", failure.category)
+                try:
+                    delay = max(delay, float(response.headers.get("retry-after", "0")))
+                except ValueError:
+                    delay = 5
+                # Do not wait out a long provider cooldown in the demo, or
+                # rotate immediately against a possibly shared project quota.
+                if delay > 5:
+                    rotate = False
+            if not rotate or index + 1 == len(self._keys):
+                break
+            self.runtime.manager.event(
+                self.runtime.task, reason + f"; trying key {index + 2} of {len(self._keys)}.", "warning",
+            )
+            await asyncio.sleep(delay)
+        if response is None or response.status_code != 200:
+            if allow_fallback:
                 return await self._send_fallback(payload, private, artifact, reason)
             raise ValueError(reason)
         if len(response.content) > 1_000_000:
@@ -210,7 +289,7 @@ class GuardedChatModel:
             if not isinstance(result, dict):
                 raise ValueError
         except (KeyError, IndexError, TypeError, ValueError):
-            raise ValueError("The model returned invalid JSON; no action was executed") from None
+            raise UnusableModelResponse("The model returned invalid JSON; no action was executed") from None
         # Never retain provider headers or raw content with possible private echoes.
         gateway.sent.append(deepcopy(payload))
         gateway.sent = gateway.sent[-20:]
@@ -234,31 +313,25 @@ class GuardedChatModel:
         # One provider switch per task; new tasks always begin with the primary.
         self._fallback = True
         self.model = gateway.fallback_model
-        self.base_url = "https://api.openai.com/v1"
-        self._api_key = gateway.fallback_api_key
-        self.runtime.manager.event(self.runtime.task, reason + "; switching to OpenAI fallback.")
+        self.base_url = FALLBACK_BASE_URL
+        self._keys = tuple(gateway.fallback_api_keys)
+        self._key_index = 0
+        self._api_key = self._keys[0]
+        self.runtime.manager.event(self.runtime.task, reason + "; switching to Gemini fallback.")
         if artifact:
             if not self.runtime.image_state:
                 raise ValueError("Fallback image needs a fresh screenshot review")
             self.runtime._prepare_image_payload()
-            await self.runtime.manager.approval(
-                self.runtime.task, self.runtime.generation, "image",
-                "Review screenshot for OpenAI fallback", self.runtime._image_payload(),
-            )
+            await self.runtime.review_image_if_needed("Review screenshot for Gemini fallback")
             state = self.runtime.image_state
             await self.runtime.check_target()
             payload, artifact = state["payload"], state["artifact"]
         else:
-            payload = deepcopy(payload)
-            payload["model"] = self.model
+            payload = {"model": self.model, "messages": deepcopy(payload["messages"]),
+                       **completion_options(self.base_url)}
             self.check(payload, private + self.runtime.private())
             self.runtime.task["request"] = payload
-            if self.runtime.task.get("_review_text"):
-                await self.runtime.manager.approval(
-                    self.runtime.task, self.runtime.generation, "model",
-                    "Review sanitized text for OpenAI fallback",
-                    {"destination": self.base_url, "sha256": digest(payload), "request": payload},
-                )
+            await self.runtime.review_text_if_needed(payload, private, "Review sanitized text for Gemini fallback")
         self.runtime.task["status"] = "reasoning"
         return await self.send(payload, digest(payload), private, artifact)
 
@@ -266,6 +339,7 @@ class GuardedChatModel:
         from browser_use.llm.views import ChatInvokeCompletion
 
         await self.runtime.observe_for_model()
+        await self.runtime.check_planning_progress()
         private = self.runtime.private()
         catalog = self.runtime.manager.catalog(self.runtime.task)
         messages = list(messages) + [
@@ -279,26 +353,33 @@ class GuardedChatModel:
                 ),
             }
         ]
-        payload = self.prepare(messages, output_format, private)
-        self.runtime.task["request"] = payload
-        if self.runtime.task.get("_review_text"):
-            await self.runtime.manager.approval(
-                self.runtime.task,
-                self.runtime.generation,
-                "model",
-                "Review sanitized text context",
-                {
-                    "destination": self.base_url,
-                    "sha256": digest(payload),
-                    "request": payload,
-                },
-            )
-        self.runtime.task["status"] = "reasoning"
-        result = await self.send(payload, digest(payload), private)
+        try:
+            recovery = self.runtime.force_visual_recovery
+            if recovery:
+                messages.append({"role": "user", "content": (
+                    "Planning has stalled. Reassess the original goal using the reviewed screenshot AND fresh "
+                    "sanitized DOM indices. Choose a concrete supported next action; do not repeat ineffective "
+                    "steps. If human input is needed, request it. Claim success only with verified goal evidence."
+                )})
+            if self.runtime.task.get("_vision") or recovery:
+                state = await self.runtime.prepare_visual_request(messages, output_format, force_review=recovery)
+                payload, artifact, private = state["payload"], state["artifact"], state["private"]
+            else:
+                artifact = None
+                payload = self.prepare(messages, output_format, private)
+                self.runtime.task["request"] = payload
+                await self.runtime.review_text_if_needed(payload, private, "Review sanitized text context")
+            self.runtime.task["status"] = "reasoning"
+            result = await self.send(payload, digest(payload), private, artifact)
+        finally:
+            self.runtime.image_state = None
+            self.runtime.force_visual_recovery = False
         # Output is also sanitized before entering native agent history/logs.
         safe = clean_strings(result, private)
         try:
             completion = output_format.model_validate(safe) if output_format else json.dumps(safe)
         except ValueError:
-            raise ValueError("The model returned an invalid action; no action was executed") from None
+            raise UnusableModelResponse("The model returned an invalid action; no action was executed") from None
+        if hasattr(completion, "action") and not completion.action:
+            raise UnusableModelResponse("The model returned no action")
         return ChatInvokeCompletion(completion=completion, usage=None)

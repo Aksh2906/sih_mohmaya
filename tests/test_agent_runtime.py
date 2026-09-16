@@ -8,6 +8,7 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -38,7 +39,14 @@ def runtime_stub(tmp_path):
         "_ref_ids": {},
         "_refs": {},
     }
-    return BrowserAgentRuntime(manager, task)
+    runtime = BrowserAgentRuntime(manager, task)
+    # Unit fixtures simulate the approval service; dedicated transport tests
+    # exercise real classifier requests through a mock HTTP peer.
+    async def review(kind, candidate, private, artifact=None):
+        from privacy_guard.image_review import image_review_decision
+        return kind == "action" or bool(artifact and image_review_decision(artifact["mask_report"])["required"])
+    runtime.llm.requires_review = AsyncMock(side_effect=review)
+    return runtime
 
 
 def test_agent_transport_drops_native_images_and_preserves_json(tmp_path):
@@ -155,6 +163,9 @@ def test_native_agent_has_only_guarded_tools_and_no_persistence(tmp_path, monkey
         "wait",
         "visual_checkpoint",
         "request_information",
+        "request_human_action",
+        "update_plan",
+        "record_source",
         "done",
     }
     agent.tools.set_coordinate_clicking(True)
@@ -184,10 +195,14 @@ class _Portal(BaseHTTPRequestHandler):
 @pytest.mark.skipif(
     os.environ.get("GUARD_BROWSER_TESTS") != "1", reason="Set GUARD_BROWSER_TESTS=1 for Chromium integration"
 )
-async def test_stock_agent_navigation_ref_fill_image_review_missing_resume(tmp_path, monkeypatch):
+@pytest.mark.parametrize("empty_first_response", [False, True])
+async def test_stock_agent_navigation_ref_fill_image_review_missing_resume(tmp_path, monkeypatch, empty_first_response):
     # Load native HTTP type annotations before replacing the transport factory.
     quiet_browser_use()
-    import browser_use  # noqa: F401
+    import browser_use.browser.profile as profile
+
+    monkeypatch.setattr(profile, "get_display_size", lambda: None)
+    from browser_use import BrowserSession  # noqa: F401
 
     finder = BrowserDriver(DATA_DIR, tmp_path, headless=True)
     monkeypatch.setenv("GUARD_BROWSER_EXECUTABLE", str(finder._browser_executable()))
@@ -221,10 +236,17 @@ async def test_stock_agent_navigation_ref_fill_image_review_missing_resume(tmp_p
 
     def respond(request):
         payload = json.loads(request.content)
+        if payload["messages"][0]["content"].startswith("APPROVAL_CHECK:"):
+            return httpx.Response(200, json={"choices": [{"message": {"content": "true"}}]})
         sent.append(payload)
         assert canary not in json.dumps(payload)
+        if empty_first_response and len(sent) == 1:
+            response = {"evaluation_previous_goal": "", "memory": "", "next_goal": "", "action": []}
+            return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(response)}}]})
         runtime = next(iter(manager.tasks.values()))["_runtime"]
-        if any(isinstance(message["content"], list) for message in payload["messages"]):
+        if '"title": "CompletionCheck"' in payload["messages"][0]["content"]:
+            response = {"achieved": True, "reason": "Both required fields are filled for review.", "human_action": None}
+        elif '"title": "VisualResult"' in payload["messages"][0]["content"]:
             assert runtime.task.get("pending") is None
             response = {
                 "summary": "The email is missing. Add a reviewed contact record.",
@@ -277,10 +299,11 @@ async def test_stock_agent_navigation_ref_fill_image_review_missing_resume(tmp_p
             assert "action" in schema["properties"]
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(response)}}]})
 
-    monkeypatch.setattr(
-        "privacy_guard.agent_llm.httpx.AsyncClient",
-        lambda **kwargs: original_client(transport=httpx.MockTransport(respond), **kwargs),
-    )
+    class FixtureClient(original_client):
+        def __init__(self, **kwargs):
+            super().__init__(transport=httpx.MockTransport(respond), **kwargs)
+
+    monkeypatch.setattr("privacy_guard.agent_llm.httpx.AsyncClient", FixtureClient)
     try:
         await driver.launch()
         request = TaskRequest(
@@ -313,17 +336,23 @@ async def test_stock_agent_navigation_ref_fill_image_review_missing_resume(tmp_p
                 pytest.fail(str(manager.public(task)))
             await asyncio.sleep(0.1)
         assert task["status"] == "waiting_input", manager.public(task)
-        assert len(sent) == 4
-        assert task["metrics"]["image_calls"] == 1
+        assert len(sent) == 4 + int(empty_first_response)
+        assert task["metrics"]["image_calls"] == len(sent)
         raw = await driver.observe(task["target_id"])
         assert raw["fields"][0]["value"] == canary
         email = vault.put_record("Email", "email", "private-person@example.test")
         await manager.control(task_id, "resume", [name_record["id"], email["id"]])
-        await asyncio.wait_for(manager.workers[task_id], timeout=45)
+        for _ in range(600):
+            if task.get("pending"):
+                manager.approve(task_id, task["pending"]["id"], True)
+            if manager.workers[task_id].done():
+                break
+            await asyncio.sleep(0.1)
+        await asyncio.wait_for(manager.workers[task_id], timeout=5)
         assert task["status"] == "completed", manager.public(task)
         raw = await driver.observe(task["target_id"])
         assert raw["fields"][1]["value"] == "private-person@example.test"
-        assert len(sent) == 6
+        assert len(sent) == 7 + int(empty_first_response)
         assert all("private-person@example.test" not in json.dumps(payload) for payload in sent)
         assert not task["_runtime"].agent.agent_directory.exists()
     finally:
@@ -365,7 +394,7 @@ async def test_destination_change_needs_approval_and_blocks_local_services(tmp_p
     assert len(approvals) == 1
 
 
-async def test_public_search_tool_cannot_type_arbitrary_or_private_values(tmp_path, monkeypatch):
+async def test_public_search_tool_accepts_rephrasing_but_rejects_private_values(tmp_path, monkeypatch):
     from privacy_guard.agent_runtime import SearchInput
 
     quiet_browser_use()
@@ -391,13 +420,18 @@ async def test_public_search_tool_cannot_type_arbitrary_or_private_values(tmp_pa
     session = BrowserSession(cdp_url="http://127.0.0.1:9222", use_cloud=False, captcha_solver=False)
     agent = build_agent(runtime, session)
     search = agent.tools.registry.registry.actions["search_text"].function
-    assert (await search(params=SearchInput(index=1, text="unrequested query"))).error
-    assert not calls
+    assert not (await search(params=SearchInput(index=1, text="best wireless headphones"))).error
+    calls.clear()
     assert not (await search(params=SearchInput(index=1, text="wireless headphones"))).error
     assert calls[0][1]["resolved_value"] == "wireless headphones"
     runtime.manager.vault.put_record("Private phrase", "text", "wireless headphones")
     assert (await search(params=SearchInput(index=1, text="wireless headphones"))).error
     assert len(calls) == 1
+    runtime.raw["fields"][0].update(tag="textarea", input_type="textarea")
+    assert not (await search(params=SearchInput(index=1, text="public product reviews"))).error
+    runtime.raw["fields"][0]["label"] = "Private notes"
+    assert (await search(params=SearchInput(index=1, text="public product reviews"))).error
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize("code", ["option_not_found", "option_ambiguous", "option_disabled"])

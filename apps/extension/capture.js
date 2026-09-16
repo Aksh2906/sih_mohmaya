@@ -11,10 +11,10 @@ let recorder = null,
 const sourceTab =
   Number(new URLSearchParams(location.search).get("source_tab")) || null;
 function note(value) {
-  $("capture-note").textContent = value;
+  $("capture-note").textContent = VeilLocale.t(value);
 }
 function error(value) {
-  $("capture-error").textContent = value;
+  $("capture-error").textContent = VeilLocale.t(value);
   $("capture-error").hidden = !value;
 }
 function refresh() {
@@ -23,14 +23,14 @@ function refresh() {
   $("stop-recording").hidden = !running;
   $("record").disabled = busy || starting;
   $("record").textContent = starting
-    ? "Requesting microphone…"
-    : "Start recording";
+    ? VeilLocale.t("Requesting microphone…")
+    : VeilLocale.t("Start recording");
   $("discard").hidden = !recording;
   $("discard").disabled = busy;
   $("transcribe").disabled = busy || !recording || running;
   $("transcribe").textContent = busy
-    ? "Transcribing…"
-    : "Transcribe with Whisper";
+    ? VeilLocale.t("Transcribing…")
+    : VeilLocale.t("Transcribe locally");
   $("recording-playback").hidden = !recording;
 }
 function clearAudio() {
@@ -145,13 +145,13 @@ $("transcribe").addEventListener("click", async () => {
       throw new Error(
         typeof result.detail === "string"
           ? result.detail
-          : "Transcription failed. Check the Whisper key in Settings.",
+          : "Transcription failed. Check the local speech model in Settings.",
       );
     $("transcript").value = String(result.text || "");
     $("transcript-section").hidden = false;
     clearAudio();
     note(
-      "Whisper returned a transcript. Review it below; no task has started.",
+      "Local speech recognition returned a transcript. Review it below; no task has started.",
     );
   } catch (e) {
     error(e.message);
@@ -218,3 +218,5 @@ window.addEventListener("pagehide", () => {
   clearAudio();
 });
 refresh();
+
+window.addEventListener("veil:language", refresh);

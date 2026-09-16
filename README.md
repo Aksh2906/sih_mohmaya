@@ -2,7 +2,7 @@
 
 A supervised browser agent with a Chrome extension, local dashboard, encrypted profile, document intake, and human-reviewed screenshot sharing. **Browser Use runs the agent locally; a hosted LLM/VLM interprets sanitized context.**
 
-Voice input uses **OpenAI Whisper (`whisper-1`)**. Audio is sent **unredacted** to OpenAI after the user chooses Transcribe. The returned transcript is an editable task draft; transcription never starts browser work automatically.
+Voice input uses **local multilingual faster-whisper (Whisper small, CPU/int8)**. Model weights download once; recognition runs offline without an API key or audio upload. English and Hindi transcripts remain editable drafts and never start a task automatically.
 
 Follow the demo below from start to finish. **First-time installation:** [setup.md](setup.md). **Short startup reference:** [startup.md](startup.md). **Technical overview:** [How it works](#how-it-works).
 
@@ -25,7 +25,7 @@ Keep Terminal running and open [http://127.0.0.1:8765](http://127.0.0.1:8765).
 
 Enter the pairing code printed in Terminal. Create a vault passphrase of at least 12 characters, or unlock your existing vault. Startup uses the existing Python environment and dashboard build; no test run is required.
 
-The primary reasoning model defaults to **Gemini 2.5 Flash** (`gemini-2.5-flash`) using `https://generativelanguage.googleapis.com/v1beta/openai`. In **Settings → Reasoning provider**, select **Remote · Gemini / compatible provider**, enter your Gemini API key, then save. Existing encrypted provider settings still load when you unlock the vault; update the model and base URL above if you previously saved another provider. The transport uses [Google’s OpenAI compatibility API](https://ai.google.dev/gemini-api/docs/openai).
+The primary reasoning provider is **OpenRouter**, with default model **Gemini 2.5 Flash** (`google/gemini-2.5-flash`) at `https://openrouter.ai/api/v1`. In **Settings → Reasoning provider**, select **Remote · OpenRouter / compatible provider**, enter your [OpenRouter API key](https://openrouter.ai/settings/keys), then save. The model identifier can be changed to another OpenRouter model supporting JSON output and image inputs. See the [OpenRouter API documentation](https://openrouter.ai/docs/quickstart).
 
 ### 2. Open the controlled browser and extension
 
@@ -69,17 +69,17 @@ Use these options:
 |---|---|
 | Reasoning | Remote model |
 | Available information | Synthetic name, email and phone only |
-| Visual checkpoints | On |
+| Redacted images at every planning step | On |
 | Also review text-only model requests | Off, to keep the demonstration moving |
 | Stop before final submission | On |
 
 Choose **Start task**. Watch the controlled browser open the portal, navigate and fill available details. Respond to action approvals if requested. The precise sequence depends on the model and page state.
 
-**Optional voice opening:** first save the separate Whisper key in Settings. Use **Record voice task** in the extension or **Record task** in the dashboard, stop recording, and choose **Transcribe with Whisper**. Edit the text; in the extension, choose **Use transcript**. Then start the task explicitly. Say that the original audio is sent unredacted to OpenAI; only the later browser context goes through the privacy filter.
+**Voice opening:** setup installs the local multilingual speech model; existing checkouts can run `.venv/bin/python scripts/speech_install.py`. Record in the dashboard or extension, choose **Transcribe locally**, edit the text, and start the task explicitly. No recording is uploaded to a speech provider.
 
 ### 5. Demonstrate screenshot redaction and human approval
 
-When the agent requests visual interpretation, it pauses before sending the image. In the extension, choose **Review image in dashboard ↗**.
+Each visual planning turn uses a fresh redacted screenshot together with sanitized text and DOM indices. Routine requests proceed automatically after a safety check. Requests needing attention open review in the extension or dashboard; **Review every image instead** is an optional stricter setting.
 
 In dashboard review:
 
@@ -92,7 +92,11 @@ In dashboard review:
 
 **What to show:** “The original is reviewed locally. This masked image is the one approved for the model. Changing the masks requires approval of the updated request.”
 
-Approval remains disabled while a drawn mask has not been applied or the latest image is still loading. Every later screenshot request also needs review.
+Approval remains disabled while a drawn mask has not been applied or the latest image is still loading. Later screenshots follow the selected review policy.
+
+If automatic privacy checks cannot finish, the agent captures again up to three times without repeating the previous browser action. A valid image then opens **Privacy scan incomplete** review in either interface, even if no automatic masks were found. Inspect the entire screenshot and add masks before approving; the notice lists the scan failure reasons. Manual rectangles use the fixed image's pixel coordinates. Invalid dimensions, zoom, or rectangles cannot be overridden: the task asks you to adjust the browser and choose **I've finished — continue** to capture again. Originals stay local and no recovery image is sent without approval of its exact image and accompanying text.
+
+Stalled planning also requests a reviewed screenshot, including for text-only tasks. An empty or invalid action response triggers recovery immediately. Three calls on unchanged page evidence, three failed action steps, three identical planned actions, or three repeats of a two-action cycle also trigger recovery. The next planning request includes the reviewed image, fresh sanitized DOM and task context. After two visual recovery attempts in one run, further stalls ask for human help and keep the task resumable. Recovery never marks the goal complete without the existing completion check.
 
 ### 6. Supply the missing document
 
@@ -139,14 +143,14 @@ Press **Ctrl+C** in Terminal when finished using the app. On restart, use the ne
 | What you see | What to do |
 |---|---|
 | Remote model or preparation button unavailable | Save the reasoning provider settings first. |
-| Task waiting at a screenshot | Open dashboard image review, apply pending masks, then approve the current request. |
+| Task waiting at a screenshot | Review the image in the extension or dashboard, apply pending masks, then approve the current request. |
 | Task still asks for details after upload | Confirm the extracted fields, refresh available information, select those fields and resume. |
 | No missing-document round | Start a new task with only name, email and phone selected. |
 | Model/API error | Check the configured key, account credit, model and image support. Inspect the task and website before restarting. |
-| Screenshot geometry cannot be verified | Let the page settle and follow the task's available recovery controls. An uncertain screenshot is blocked. |
+| Screenshot checks are incomplete | After three capture attempts, review and mask the local preview. If image coordinates are invalid, let the page settle, reset zoom, then choose **I've finished — continue**. |
 | Pairing or connection error | Keep the companion terminal open and use its current pairing code. |
 
-For the presentation, describe the visual filter as **DOM-based masking with human review**. Local ViT/CV and automatic face detection are not implemented. The selected values reach the destination website when filled, and Whisper receives raw audio when you choose transcription. Live model performance depends on the configured provider; the demo is supervised.
+For the presentation, describe the visual filter as **DOM-based masking with human review**. Local ViT/CV and automatic face detection are not implemented. The selected values reach the destination website when filled; speech recognition runs locally. Live model performance depends on the configured provider; the demo is supervised.
 
 ## What version 0.2 adds
 
@@ -163,7 +167,7 @@ This version intentionally **does not run a local ViT, browser CV model, or auto
 
 ```mermaid
 flowchart TD
-    Voice[Recorded voice] -->|Unredacted audio, explicit Transcribe| Whisper[OpenAI Whisper API]
+    Voice[Recorded voice] -->|Local audio, explicit Transcribe| Whisper[Local multilingual Whisper]
     Whisper --> Draft[Editable local task draft]
     Typed[Typed instruction] --> Draft
     Draft -->|Start task| Agent[Local Browser Use agent]
@@ -184,7 +188,7 @@ The extension and dashboard control an authenticated local Python companion. The
 
 The planner receives opaque references such as `ref_a1b2c3d4`, their labels and types. A custom `input_ref` tool resolves a reference immediately before filling the intended field. The resolved value is not placed in the model's action object or ordinary task events. **The destination website receives entered values**, potentially before submission.
 
-For remote tasks, sanitized text planning is automatic unless text review is enabled. Every screenshot request requires human review. The agent has bounded step/call budgets and captures screenshots at explicit checkpoints rather than continuously uploading the screen. Final submission is withheld by the default task policy.
+For remote tasks, visual planning is on by default. Every planning turn and completion check captures a fresh screenshot. Image review is required when the safety check flags the prepared context, fails, or when **Review every image instead** is enabled. Incomplete privacy scans and recovery checkpoints also require review. A task can explicitly disable vision for sanitized text-only planning. Step/call budgets remain bounded. Final submission is withheld by the default task policy.
 
 ## Interfaces
 
@@ -208,9 +212,9 @@ For remote tasks, sanitized text planning is automatic unless text review is ena
 - Screenshot originals are transient local preview data. The model receives an immutable, verified masked PNG only through the reviewed image path. Manual masks are additive; changing an image requires a new approval.
 - Page text, goals, tool results and model history pass through known-value/pattern sanitization. Unknown or unusual PII may be missed. Inspect context and mask uncertain regions before sharing sensitive pages.
 - Browser Use cloud synchronization, telemetry, unguarded model fallbacks and raw screenshot/history persistence are disabled in the agent integration.
-- **Audio is the explicit exception:** Whisper receives the original recording. Editing the transcript afterward does not remove that earlier disclosure. Recordings and transcripts are not automatically saved to the vault.
-- Provider keys stay in the companion and encrypted vault, not frontend bundles or extension storage. Whisper has a separate OpenAI key setting from the configurable reasoning provider.
-- Pairing authenticates each interface. The extension cannot read vault values or original screenshot previews; detailed image approval happens in the dashboard.
+- **Audio stays local:** recognition runs in a cancellable local Python process using installed model files. Recordings and transcripts are not automatically saved to the vault. Review the transcript before starting the task.
+- Provider keys stay in the companion and encrypted vault, not frontend bundles or extension storage. Local speech needs no key. Old Whisper credentials are removed on unlock.
+- Pairing authenticates each interface. The extension cannot read vault records directly. A paired, unlocked extension can retrieve pending local screenshot previews, add masks and approve the current image request.
 - Vault lock cancels active work and clears credentials and image artifacts. Restarted tasks remain stopped; no pending browser action is automatically replayed.
 
 Ordinary Chromium cookies/cache, the destination website and operating-system backups are outside vault encryption. Local processing is not a guarantee against a compromised device.
@@ -229,7 +233,7 @@ privacy_guard/
   privacy.py           Known-value and pattern text filtering
   privacy_geometry.py  Local DOM regions for masking
   screenshots.py       Immutable masked images and geometry validation
-  audio.py             Bounded, unredacted Whisper transcription
+  audio.py             Bounded, cancellable local multilingual speech recognition
   vault.py             Encrypted local records and documents
   documents.py         Local extraction, review and decimal calculations
   gateway.py           Legacy deterministic demo model gateway
@@ -256,21 +260,31 @@ Verification uses synthetic data and mocked hosted responses where credentials a
 
 ## Current scope
 
-One user, one active task and one controlled Chromium tab. Starting from a URL opens the page and waits for its document to become ready before binding the agent to that exact tab; startup redirects use the resolved URL. Standard HTML forms, same-origin embedded forms, and controls in open shadow DOM are supported. Links requesting a new window stay in the task tab. Moving to another website origin during a task requires an in-app destination approval.
+One user, one active task and one controlled Chromium tab. A URL is optional in Remote mode; a task can start with automatic website discovery. Starting from a URL opens the page and waits for its document to become ready before binding the agent to that exact tab; startup redirects use the resolved URL. Standard HTML forms, same-origin embedded forms, and controls in open shadow DOM are supported. Links requesting a new window stay in the task tab. Moving to another website origin during a task requires an in-app destination approval.
 
 Remote mode reads locally verified field indices instead of forwarding Browser Use's native DOM text. Uninspectable frames are omitted from text context and masked in screenshots, so an unrelated iframe no longer blocks the whole page. Forms inside cross-origin frames, closed shadow DOM, login/CAPTCHA, some custom widgets, arbitrary file submission and complex tax calculations still need manual handling. Observations remain bounded to 12,000 DOM elements and 2,000 controls; rapidly changing pages can require fresh observations.
 
-For browsing, give a specific public search phrase, for example: “Search for wireless headphones on this website and open a relevant product.” The `search_text` tool can enter a phrase from the task into a search box. Personal form values still use selected, reviewed records. Search/Next/Continue controls can proceed through the existing click review; final purchases and form submissions remain withheld by default. These capabilities are verified with synthetic Chromium fixtures, not a claim of universal Amazon or ITR portal compatibility. Firefox, browser-local CV, local speech inference and signed installers are future work.
+For browsing, start with a plain-language task such as “Find wireless headphones on Amazon, compare three options, and show me the best match.” Leave the starting website and tab empty in Remote mode. The controlled browser opens a search homepage; the guarded agent chooses a public search query or a relevant HTTPS homepage, reads the results, and continues on the chosen site. The raw task is never automatically inserted into a search URL. The `search_web` tool discovers sites, and `search_text` enters public queries into input or textarea search boxes. Personal form values still use selected, reviewed records. Search/Next/Continue controls can proceed through the existing click review; final purchases and form submissions remain withheld by default. These capabilities are verified with synthetic Chromium fixtures, not a claim of universal Amazon or ITR portal compatibility. Firefox, browser-local CV, local speech inference and signed installers are future work.
 
-The project reuses the MIT-licensed [Browser Use repository](https://github.com/browser-use/browser-use); its navigation and reasoning loop are upstream capabilities. The contribution here is the supervision, privacy gateway, local facts and document workflow. The audio integration follows the [OpenAI transcription API](https://developers.openai.com/api/docs/guides/speech-to-text).
+A blue **Agent** cursor moves to visible controls before clicks, field entry and dropdown selection, and toward the page before scrolling. It is an on-page visual indicator, not the system mouse pointer. The overlay does not intercept clicks, become part of model observations, or replace the atomic action checks. Stop and page-change validation are checked after movement and before dispatch. In the extension, enable **Use the current tab instead of finding a website** for tasks about the page already open; otherwise Remote mode discovers a site. Restart the companion and reload the unpacked extension after updating.
+
+The project reuses the MIT-licensed [Browser Use repository](https://github.com/browser-use/browser-use); its navigation and reasoning loop are upstream capabilities. The contribution here is the supervision, privacy gateway, local facts and document workflow. The local speech integration uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
 
 The [original implementation plan](IMPLEMENTATION_PLAN.md) is historical. The [v0.2 implementation record](docs/IMPLEMENTATION_V0_2.md) describes the revised scope.
 
-### Optional OpenAI fallback
+### Optional Gemini fallback
 
-Gemini 2.5 Flash remains the primary model. In Settings, save a separate OpenAI key under **Optional fallback · OpenAI** (default model: `gpt-4.1-mini`). Without that key, no fallback is attempted. A remote agent task switches once to OpenAI after a connection failure or HTTP 400/401/403/404/408/429/5xx. It stays on OpenAI for the rest of that task; new tasks begin with Gemini. Redirects, privacy-check failures and invalid model output do not trigger fallback.
+OpenRouter is the primary provider for each new task. In Settings, save up to 10 **Gemini API keys · Google AI Studio** under **Optional fallback · Gemini** (default model: `gemini-2.5-flash`). Create the key in [Google AI Studio](https://aistudio.google.com/apikey). Fallback requests go directly to `https://generativelanguage.googleapis.com/v1beta/openai` using [Google's compatible Chat Completions API](https://ai.google.dev/gemini-api/docs/openai); no OpenAI reasoning key is needed.
 
-Text review, when enabled, is repeated for the changed destination. Images always require fresh review for OpenAI, including any updated masks. Keys stay encrypted locally and the Whisper key is never reused automatically. Restart the companion after updating the code, then save the keys in the unlocked Settings page.
+In each provider section, use **Add another key** to enter up to 10 keys. Saving nonempty rows replaces that provider's pool; blank rows preserve existing keys. Keys are deduplicated, encrypted, and never returned by the settings API. Existing single-key settings remain compatible.
+
+The agent starts with OpenRouter and tries the next key on authentication, credits, quota or temporary failures. It keeps the working key for the rest of the task. Each key is tried at most once per request, with bounded backoff and a 90-second network budget per provider. Long Retry-After cooldowns skip further attempts for that provider. Once the primary pool fails, the task switches once to Gemini; new tasks begin with OpenRouter. Generic HTTP 400 request errors skip same-provider key rotation, while an explicitly invalid-key 400 can rotate. Redirects, content blocks, privacy-check failures and invalid model output do not trigger fallback. Text review, when enabled, is repeated for the changed destination. Images always require fresh review for Gemini, including updated masks.
+
+Use **Check saved keys** before the demo to send one synthetic text/JSON request per saved key and see its result by provider and slot. This uses API credits, tests saved settings only, and does not verify images or complete browser tasks. Error messages distinguish invalid keys, billing, quota, model configuration and malformed requests without displaying provider echoes. Gemini requests omit the unsupported `store` parameter; this addresses a [reported cause of Gemini HTTP 400](https://github.com/tailscale/tailscale/issues/19629).
+
+Multiple keys do not guarantee uptime or add shared quota: [Gemini limits apply per project](https://ai.google.dev/gemini-api/docs/rate-limits), and OpenRouter keys can share account credits.
+
+Restart the companion and unlock the vault after updating. Legacy direct-Gemini settings move their model and key into the Gemini fallback slot; legacy direct-OpenAI reasoning settings are reset to OpenRouter with an empty primary key. Old OpenAI fallback keys are removed from reasoning settings, and the obsolete Whisper API key is removed. Enter your OpenRouter key and save. Keys stay encrypted locally.
 
 ### Backend diagnostic logs
 
@@ -300,6 +314,25 @@ Task events record status and step metadata; their text remains in the dashboard
 Third-party verbose logging remains disabled. Logging is configured by the normal
 backend entry point (`privacy-guard` or `python -m privacy_guard.main`).
 
+### Login handoff and task progress
+
+Remote tasks now keep a stage plan with success criteria and references to pages
+actually observed by the agent. For unfamiliar routes, the agent can consult public
+search engines and official help pages, record sources and return to previously
+visited task pages. Private values remain prohibited in public search queries.
+
+Login, OTP, CAPTCHA and other required manual actions use a resumable browser
+handoff. Complete the step on the website and choose **I've finished — continue**
+in the dashboard or extension. The same task, target tab, selected records and
+plan are retained; a fresh observation verifies what changed. Authentication
+secrets are entered on the website, not in chat or the vault.
+
+Before successful completion, a separate guarded model request checks fresh page
+evidence against the original goal. Login pages and unfinished stages do not count
+as success. Step limits now pause the remote task for review rather than require a
+new task. File saving remains unsupported: reaching a Download page does not prove
+that a PDF was saved. See [startup.md](startup.md) for the handoff workflow.
+
 ### Dropdown compatibility
 
 Native single-choice dropdowns support private-reference matching by option value
@@ -318,3 +351,20 @@ forms, but does not guarantee every website: inaccessible controls, login/CAPTCH
 file-upload requirements and unsupported widgets may still need manual help.
 After updating, restart the backend and start a fresh task for an already-ended
 `option_not_unique` failure.
+
+### Supervised multilingual workflow
+
+- English/Hindi interface selection is available in both the dashboard and extension; typed and spoken input can use either language. The selected language is passed to the main agent.
+- Short prompts become a visible structured brief with the original request, planning stages, missing-information policy, human handoffs and completion evidence. Expansion uses a local template, without inventing facts or making an extra provider request. The original goal remains the completion check's authority.
+- Visible login forms run a local fill-first check before model planning. Clearly and uniquely matched selected vault references are filled before requesting human help, including when a model calls the handoff “manual”. Field type aliases such as `Aadhaar Number` are normalized; Aadhaar values still require Aadhaar fields. Existing values are preserved. Password records have an explicit type, and OTP/CAPTCHA controls (including `one-time-code` fields) remain manual. The handoff reports filled fields and missing or ambiguous matches. Select your reviewed Aadhaar record when starting or resuming the task.
+- UIDAI's unlabelled `name="uid"` input is recognized as Aadhaar only on the HTTPS `tathya.uidai.gov.in` document with an Aadhaar login title. Explicit field labels take precedence; a generic `uid` on other sites does not receive identity data. This fills the saved number before human login handoff and does not submit CAPTCHA or OTP.
+- Visual planning is on by default. Each action-planning call and final completion check captures a fresh redacted image together with DOM/text context. Safety checks decide whether the prepared context needs approval; safe requests proceed automatically. Before the browser opens, website selection has no page screenshot and uses sanitized text.
+- The extension can show the local original and actual outgoing redacted image, draw additional masks, and approve the current image. New masks replace the approval ID. Approval is disabled while viewing the original, loading a preview or leaving a mask unapplied.
+
+After updating, restart the companion, refresh the dashboard, and reload the unpacked extension in the controlled browser. Choose a language and start a fresh Remote task with visual planning enabled. This does not add file-download support: a download button alone is not proof of a saved file, and unsupported steps remain resumable human handoffs.
+
+### Approval checks
+
+Approval checks use separate calls to the same active model, endpoint and key already configured for the main agent (OpenRouter by default). The checker receives locally sanitized text and, for image requests, the validated redacted PNG. It returns only `true` (human review required) or `false` (proceed). Routine button clicks include the original task, page context, control, destination and submit metadata. Classification timeouts, HTTP errors, malformed answers and changed context require review. No separate classifier model, key or provider is configured; a check does not switch providers on failure.
+
+The configured remote provider receives the sanitized candidate for this check **before** any resulting human review. Raw screenshots and vault credentials are not supplied to the checker. Automatic redaction is not a guarantee that all unknown personal content has been detected. Choose **Review every image instead** or text review to review those requests before remote transmission. Incomplete scans and stalled-planning screenshots skip remote classification and require manual review. Existing final-submission, destructive-action, destination and CAPTCHA/OTP controls remain enforced. Checks add one bounded model request per eligible decision and are counted separately from task reasoning calls.

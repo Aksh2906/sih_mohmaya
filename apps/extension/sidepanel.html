@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Dev Privacy Guard</title>
+    <title>Veil</title>
     <link rel="stylesheet" href="sidepanel.css" />
   </head>
   <body>
     <header>
       <div class="brand">
         <span class="brand-mark">↳</span>
-        <div>dev<span>.</span><small>privacy guard</small></div>
+        <div>Veil</div>
       </div>
       <button
         id="dashboard"
@@ -21,6 +21,13 @@
         ↗
       </button>
     </header>
+    <label class="language-picker"
+      >Language / भाषा
+      <select id="language" aria-label="Language / भाषा">
+        <option value="en">English</option>
+        <option value="hi">हिन्दी</option>
+      </select></label
+    >
     <main>
       <div id="error" class="alert" role="alert" hidden></div>
       <section id="pairing" hidden>
@@ -96,8 +103,8 @@
               <button id="voice-open" type="button" class="button secondary">
                 Record voice task</button
               ><small
-                >Record locally, then explicitly send to Whisper. Audio is sent
-                unredacted to OpenAI.</small
+                >Record and transcribe locally in English or Hindi. No audio
+                upload.</small
               >
             </div>
             <p id="transcript-note" class="resume-note" role="status" hidden>
@@ -126,9 +133,14 @@
               placeholder="https://example.com/application"
             />
             <p class="resume-note">
-              No open page needed. Enter a URL here or include an https://
-              website URL in your goal.
+              Describe your task and the remote agent will open the destination
+              site directly. No Google search. A blue cursor shows where it
+              acts. A starting URL is optional.
             </p>
+            <label class="check-option" for="use-current-tab">
+              <input id="use-current-tab" type="checkbox" />
+              <span>Use the current tab instead of finding a website</span>
+            </label>
             <label for="mode">Reasoning</label
             ><select id="mode">
               <option value="demo">Demo planner · no remote model</option>
@@ -137,9 +149,14 @@
             <div id="remote-options">
               <label class="check-option"
                 ><input id="vision" type="checkbox" checked /><span
-                  >Visual checkpoints<small
-                    >Review each screenshot before sending.</small
+                  >Redacted images at every planning step<small
+                    >Review requests that need attention.</small
                   ></span
+                ></label
+              >
+              <label class="check-option"
+                ><input id="review-every-image" type="checkbox" /><span
+                  >Review every image instead</span
                 ></label
               >
               <label class="check-option"
@@ -178,6 +195,10 @@
             ><span id="task-status" class="badge"></span>
           </div>
           <h2 id="task-goal"></h2>
+          <details id="task-brief" hidden>
+            <summary>Structured task brief</summary>
+            <pre id="task-brief-text"></pre>
+          </details>
           <div class="task-meta">
             <span id="step"></span><span id="task-id"></span>
           </div>
@@ -185,8 +206,49 @@
             <span class="eyebrow">WAITING FOR YOU</span>
             <h3 id="approval-title"></h3>
             <p id="approval-description"></p>
-            <details open>
-              <summary>Inspect exact payload</summary>
+            <div id="visual-panel" hidden>
+              <p id="visual-recovery" role="alert" hidden></p>
+              <p>
+                Inspect the redacted image. Drag over any additional private
+                area, then apply the mask.
+              </p>
+              <label
+                ><input id="show-original" type="checkbox" /> Show original
+                locally</label
+              >
+              <div
+                id="visual-stage"
+                style="position: relative; touch-action: none; line-height: 0"
+              >
+                <img
+                  id="visual-image"
+                  alt="Redacted screenshot preview"
+                  draggable="false"
+                  style="width: 100%; display: block"
+                />
+                <div
+                  id="visual-mask"
+                  hidden
+                  style="
+                    position: absolute;
+                    background: #111b;
+                    border: 2px solid #fff;
+                    pointer-events: none;
+                  "
+                ></div>
+              </div>
+              <button id="apply-mask" class="button secondary full" disabled>
+                Apply mask
+              </button>
+              <p id="visual-report" role="status"></p>
+            </div>
+            <div id="action-summary" class="action-summary" hidden>
+              <strong id="action-description"></strong>
+              <p id="action-destination"></p>
+              <p id="action-detail"></p>
+            </div>
+            <details>
+              <summary>Technical details</summary>
               <pre id="approval-payload"></pre>
             </details>
             <button id="image-review" class="button primary full" hidden>
@@ -199,6 +261,12 @@
           </div>
           <div id="task-error" class="alert" hidden></div>
           <div id="task-result" class="result" hidden></div>
+          <p id="human-action-note" class="resume-note" hidden>
+            Complete the step in the controlled browser, then choose “I've
+            finished — continue”. Enter passwords, OTPs and CAPTCHA answers only
+            on the website.
+          </p>
+          <div id="task-plan" class="result" hidden></div>
           <div id="resume-information" hidden>
             <label>Review available information</label>
             <p class="resume-note">
@@ -258,7 +326,7 @@
           ><button id="portal-prepare" class="button secondary full">
             Prepare portal demo in dashboard ↗</button
           ><button id="voice-settings" class="button secondary full">
-            Configure Whisper transcription ↗</button
+            Local speech settings ↗</button
           ><button id="disconnect" class="button secondary full">
             Disconnect extension</button
           ><small
@@ -271,6 +339,8 @@
     <footer>
       <span class="status-dot"></span> Your data. Your device. Your decision.
     </footer>
+    <script src="visual-review.js"></script>
+    <script src="locale.js"></script>
     <script src="sidepanel.js"></script>
   </body>
 </html>

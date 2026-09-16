@@ -1,5 +1,5 @@
 [project]
-name = "dev-privacy-guard"
+name = "veil"
 version = "0.2.0"
 description = "A local privacy vault and browser assistant built on Browser Use"
 requires-python = ">=3.12,<3.14"
@@ -15,12 +15,14 @@ dependencies = [
   "pytesseract>=0.3.13,<1",
   "httpx>=0.28,<1",
   "playwright>=1.50,<2",
+  "faster-whisper>=1.2,<2",
 ]
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "pytest-asyncio>=0.25,<2", "ruff>=0.11,<1"]
 
 [project.scripts]
+veil = "privacy_guard.main:main"
 privacy-guard = "privacy_guard.main:main"
 
 [build-system]

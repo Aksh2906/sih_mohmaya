@@ -212,6 +212,7 @@ async def test_real_dom_collector_masks_fields_echoes_patterns_and_unknown_media
                 <p id="regex">a+b(123)[z]</p><p id="unknown">unlisted.person@example.test</p>
                 <p id="pan">ABCTY1234D</p><p id="amount">INR 24,550.25</p>
                 <input id="password" type="password" value="my password">
+                <input type="password" id="empty-password"><input autocomplete="one-time-code" id="empty-otp">
                 <canvas id="canvas" width="90" height="40"></canvas>
                 <iframe id="frame" width="90" height="40" srcdoc="<p>private frame</p>"></iframe>
                 <p id="public-end">Continue reviewing the application.</p>""")
@@ -222,6 +223,7 @@ async def test_real_dom_collector_masks_fields_echoes_patterns_and_unknown_media
             assert {
                 "populated_field",
                 "password_field",
+                "empty_private_field",
                 "known_value",
                 "email_pattern",
                 "identifier_pattern",

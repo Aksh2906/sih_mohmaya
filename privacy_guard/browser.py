@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from .browser_cursor import CURSOR_INSTALL_JS, CURSOR_MOVE_JS
 from .diagnostics import logger, traced
 
 SHUTDOWN_LOCK_TIMEOUT = 2.0
@@ -20,6 +21,16 @@ SHUTDOWN_LOCK_TIMEOUT = 2.0
 
 SELECTION_REJECTIONS = frozenset({"option_not_found", "option_ambiguous", "option_not_unique",
                                   "option_disabled", "unsupported_select"})
+
+BROWSER_ERROR_MESSAGES = {
+    "page_changed_during_observation": "The page kept changing while it was being captured. Let it finish loading, then start a fresh task.",
+    "stale_observation": "The page changed before the action could run. Start a fresh task to inspect the page again.",
+    "observation_failed": "The browser page could not be read. Check that the tab is still open, then start a fresh task.",
+    "target_not_found": "The task's browser tab was closed or is no longer available. Open the site in a new task.",
+    "browser_disconnected": "The browser connection was lost. Reconnect the browser and start a new task.",
+    "browser_not_running": "The controlled browser is not running. Open it and start a new task.",
+    "page_ready_timeout": "The page did not finish opening in time. Check the browser and try again.",
+}
 
 
 class BrowserError(RuntimeError):
@@ -42,7 +53,7 @@ def _origin(url: str) -> str:
 
 
 # Runs in an isolated world. Page scripts cannot replace this state's node map.
-_OBSERVE_JS = r"""function() {
+_OBSERVE_JS = "function() {" + CURSOR_INSTALL_JS + r"""
   let s = globalThis.__privacyGuard;
   if (!s) {
     s = globalThis.__privacyGuard = {nonce: crypto.randomUUID(), revision: 0, serial: 0, nodes: []};
@@ -56,6 +67,9 @@ _OBSERVE_JS = r"""function() {
   if (s.observers.some(o => o.takeRecords().length)) s.revision++;
   s.serial++;
   s.nodes = [];
+  s.links = new Map();
+  s.linkSignature = e => JSON.stringify([e.outerHTML, e.href,
+    (e.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => e.getRootNode().getElementById(id)?.textContent || '')]);
   for (const observer of s.observers) observer.disconnect();
   s.observers = [];
   s.frames = [];
@@ -75,6 +89,7 @@ _OBSERVE_JS = r"""function() {
     texts.push(root.body?.innerText || [...root.children].map(e => e.innerText || '').join('\n'));
     for (const e of root.querySelectorAll('*')) {
       if (elements.length >= 12000) { truncated_fields = true; break; }
+      if (e === globalThis.__privacyGuardCursor?.host) continue;
       elements.push(e);
       if (e.shadowRoot) roots.push(e.shadowRoot);
       if (['IFRAME', 'FRAME'].includes(e.tagName)) {
@@ -100,14 +115,25 @@ _OBSERVE_JS = r"""function() {
     if (fields.length >= 2000) { truncated_fields = true; break; }
     const r = e.getBoundingClientRect();
     const labelled = (e.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => e.getRootNode().getElementById(id)?.textContent || '').join(' ');
-    const label = clean(e.labels?.length ? [...e.labels].map(x => x.textContent).join(' ') : labelled || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.textContent || e.name || e.id);
+    let label = clean(e.labels?.length ? [...e.labels].map(x => x.textContent).join(' ') : labelled || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.textContent);
+    // UIDAI's OTP login uses an unlabelled name="uid" control. Keep this
+    // adapter scoped to its HTTPS login document; "uid" elsewhere is not
+    // evidence that a field accepts Aadhaar. Explicit labels always win.
+    const owner = e.ownerDocument;
+    if (!label && e.matches('input[name="uid"]') && ['text','tel','number'].includes(e.type) &&
+        owner.location.origin === 'https://tathya.uidai.gov.in' &&
+        /\baadhaar\b/i.test(owner.title) && /\blogin\b/i.test(owner.title))
+      label = 'Aadhaar number';
+    label ||= clean(e.name || e.id);
     const tag = e.tagName.toLowerCase();
     const index = s.nodes.push(e);
+    if (tag === 'a' && /^https?:$/.test(new URL(e.href).protocol))
+      s.links.set(e, s.linkSignature(e));
     const inputType = String(e.type || '').toLowerCase();
     const submit = (tag === 'button' && (!inputType || inputType === 'submit')) || (tag === 'input' && ['submit','image'].includes(inputType));
     fields.push({index, label:label.slice(0,500), tag, input_type:inputType,
       id:e.id || '', name:e.name || '', autocomplete:e.autocomplete || '',
-      value: inputType === 'password' ? '' : String(e.value || ''),
+      value: inputType === 'password' ? '' : String(e.value || ''), filled: Boolean(e.value),
       options: tag === 'select' ? [...e.options].slice(0,150).map((o, index) => ({index, value:o.value,label:clean(o.label),disabled:o.disabled || o.parentElement?.disabled === true,selected:o.selected})) : [],
       rect:{x:r.x,y:r.y,width:r.width,height:r.height},
       disabled:!!e.disabled, readonly:!!e.readOnly, required:!!e.required,
@@ -132,8 +158,17 @@ _EXECUTE_JS = r"""function(expected, action, privateValue) {
   if (s.frames.some(f => !f.element.isConnected || f.element.contentDocument !== f.document))
     return {ok:false,error:'stale_observation'};
   const current = `${s.nonce}:${s.revision}:${s.serial}`;
-  if (expected.epoch !== current || location.href !== expected.url || location.origin !== expected.origin)
+  if (location.href !== expected.url || location.origin !== expected.origin || expected.epoch !== s.epoch)
     return {ok:false,error:'stale_observation'};
+  if (expected.epoch !== current) {
+    // An unrelated live score/ad update must not invalidate an unchanged link.
+    // Keep the exact captured node, markup, accessible label and resolved URL.
+    // Private entry and buttons still require an entirely unchanged observation.
+    const link = s.nodes[action.index - 1];
+    if (!(action.type === 'click' && link?.tagName === 'A' && link.isConnected &&
+          s.links?.has(link) && s.links.get(link) === s.linkSignature(link)))
+      return {ok:false,error:'stale_observation'};
+  }
   if (action.type === 'wait' || action.type === 'done') return {ok:true,action:action.type};
   if (action.type === 'scroll') {
     window.scrollBy({top:action.delta_y,left:0,behavior:'instant'});
@@ -147,7 +182,7 @@ _EXECUTE_JS = r"""function(expected, action, privateValue) {
     return {ok:false,error:'invalid_target'};
   if (action.type === 'input_ref') {
     const tag = e.tagName.toLowerCase(), type = (e.type || '').toLowerCase();
-    if (!(tag === 'textarea' || (tag === 'input' && ['text','email','tel','url','search','number','date','month','week','time','datetime-local'].includes(type))))
+    if (!(tag === 'textarea' || (tag === 'input' && ['text','email','tel','url','search','number','date','month','week','time','datetime-local','password'].includes(type))))
       return {ok:false,error:'unsupported_input_type'};
     const win = e.ownerDocument.defaultView;
     const proto = tag === 'textarea' ? win.HTMLTextAreaElement.prototype : win.HTMLInputElement.prototype;
@@ -446,26 +481,31 @@ class BrowserDriver:
     async def observe(self, target_id: str, include_screenshot: bool = True) -> dict[str, Any]:
         async with self._lock:
             try:
-                page, context = await self._context(target_id, fresh=True)
-                raw = await self._call(page, context, _OBSERVE_JS)
-                _origin(raw["url"])
-                screenshot = (
-                    await asyncio.wait_for(page.screenshot(), timeout=15) if include_screenshot else None
-                )
-                # Detect mutation/navigation during screenshot; do not pair mismatched state/pixels.
-                valid = await self._call(
-                    page,
-                    context,
-                    _EXECUTE_JS,
-                    {"url": raw["url"], "origin": _origin(raw["url"]), "epoch": raw["epoch"]},
-                    {"type": "wait"},
-                    None,
-                )
-                if not valid.get("ok"):
-                    raise BrowserError("page_changed_during_observation")
-                raw.update(target_id=target_id, screenshot=screenshot)
-                self._observations[target_id] = copy.deepcopy(raw)
-                return raw
+                self._observations.pop(target_id, None)
+                for attempt in range(3):
+                    page, context = await self._context(target_id, fresh=True)
+                    raw = await self._call(page, context, _OBSERVE_JS)
+                    _origin(raw["url"])
+                    screenshot = None
+                    if include_screenshot:
+                        screenshot = await asyncio.wait_for(page.screenshot(), timeout=15)
+                        # Pixels are captured separately: reject mismatched state and retry
+                        # only this read. Text-only observations are already atomic and
+                        # their exact target/epoch is checked again at action dispatch.
+                        valid = await self._call(
+                            page, context, _EXECUTE_JS,
+                            {"url": raw["url"], "origin": _origin(raw["url"]), "epoch": raw["epoch"]},
+                            {"type": "wait"}, None,
+                        )
+                        if not valid.get("ok"):
+                            if attempt == 2:
+                                raise BrowserError("page_changed_during_observation")
+                            logger.info("browser.observe.retry reason=page_changed_during_observation")
+                            await asyncio.sleep(0.15 * (attempt + 1))
+                            continue
+                    raw.update(target_id=target_id, screenshot=screenshot)
+                    self._observations[target_id] = copy.deepcopy(raw)
+                    return raw
             except BrowserError:
                 raise
             except Exception:  # noqa: BLE001 -- replace all CDP errors with a value-free code
@@ -622,6 +662,14 @@ class BrowserDriver:
                 page, context = await self._context(target_id)
                 if generation != self._generation or not self.can_execute():
                     raise BrowserError("task_stopped")
+                if kind not in {"wait", "done"}:
+                    # Animate first, then revalidate the exact observation in the
+                    # atomic dispatcher. A Stop or page change during movement
+                    # must prevent the actual click or private-value entry.
+                    await self._call(page, context, CURSOR_MOVE_JS, safe_action)
+                    await asyncio.sleep(0.5)
+                    if generation != self._generation or not self.can_execute():
+                        raise BrowserError("task_stopped")
                 result = await self._call(
                     page,
                     context,

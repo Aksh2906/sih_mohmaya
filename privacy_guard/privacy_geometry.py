@@ -8,6 +8,30 @@ from __future__ import annotations
 
 import math
 
+# Only these fixed diagnostics may enter logs/UI; never publish arbitrary page text.
+PRIVACY_FAILURES = {
+    "Wait for page fonts to finish loading.": "fonts_loading",
+    "Pause active page animations before capturing a screenshot.": "active_animations",
+    "DOM privacy collection timed out.": "collection_timeout",
+    "DOM privacy collection exceeded its limit.": "element_limit",
+    "Invalid privacy geometry.": "invalid_geometry",
+    "Too many privacy regions.": "region_limit",
+    "Known-value input was not available.": "known_values_unavailable",
+    "Known-value matching exceeded its limit.": "known_value_limit",
+    "Visible text exceeded the privacy limit.": "text_limit",
+    "Generated CSS media needs manual handling.": "generated_media",
+    "Sensitive generated CSS content needs manual handling.": "generated_private_text",
+    "DOM privacy collection failed.": "collection_failed",
+}
+
+
+def privacy_failure_codes(geometry: dict) -> list[str]:
+    warnings = geometry.get("warnings", [])
+    if not isinstance(warnings, list):
+        return ["collection_incomplete"]
+    return sorted({PRIVACY_FAILURES.get(w, "collection_incomplete") for w in warnings
+                   if isinstance(w, str)}) or ["collection_incomplete"]
+
 PRIVACY_REGIONS_JS = r"""function(knownSecrets) {
   const result = {
     url: location.href,
@@ -63,7 +87,7 @@ PRIVACY_REGIONS_JS = r"""function(knownSecrets) {
       const tag = e.tagName.toLowerCase(), type = String(e.type || '').toLowerCase();
       if (['input', 'textarea', 'select'].includes(tag) && !['submit', 'button', 'reset', 'image'].includes(type)) {
         const value = type === 'password' ? '' : String(e.value || '');
-        if (type === 'password' || value.trim() || e.autocomplete === 'one-time-code') addRect(e.getBoundingClientRect(), type === 'password' ? 'password_field' : 'populated_field');
+        if (type === 'password' || value.trim() || e.autocomplete === 'one-time-code') addRect(e.getBoundingClientRect(), type === 'password' ? (e.value ? 'password_field' : 'empty_private_field') : (value.trim() ? 'populated_field' : 'empty_private_field'));
         if (value.trim() && !['checkbox', 'radio'].includes(type)) secrets.push(value);
       }
       if (['img', 'video', 'canvas', 'iframe', 'frame', 'svg', 'object', 'embed'].includes(tag) || (tag === 'input' && type === 'image')) {

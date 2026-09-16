@@ -110,7 +110,7 @@ def test_origin_normalization():
     assert _origin("http://[::1]:8766/form") == "http://[::1]:8766"
 
 
-_FORM = b"""<!doctype html><html><head><title>Privacy Guard synthetic test</title></head>
+_FORM = b"""<!doctype html><html><head><title>Veil synthetic test</title></head>
 <body><h1>Synthetic application</h1><form onsubmit="event.preventDefault()">
 <label>Full name<input name="full_name" autocomplete="name"></label>
 <label>State<select name="state"><option value="">Choose</option><option value="DL">Delhi</option></select></label>
@@ -162,10 +162,10 @@ async def test_real_browser_reference_fill_target_epoch_and_approval(tmp_path, m
         json.dumps(
             {
                 "manifest_version": 3,
-                "name": "Privacy Guard test",
+                "name": "Veil test",
                 "version": "0.0.1",
                 "permissions": ["activeTab"],
-                "action": {"default_title": "Privacy Guard"},
+                "action": {"default_title": "Veil"},
             }
         )
     )
@@ -376,5 +376,133 @@ async def test_dropdown_identity_normalization_rejection_and_event_verification(
             # A site's synchronous handler rejecting a choice must not report success.
             await page.locator("select").evaluate("e => e.onchange = () => { e.selectedIndex = 0; }")
             assert (await execute("select_option", option_index=2, approved=True))["error"] == "selection_not_accepted"
+        finally:
+            await browser.close()
+
+
+@pytest.mark.skipif(os.environ.get("GUARD_BROWSER_TESTS") != "1", reason="Opt-in real Chromium test")
+async def test_uidai_identity_adapter_requires_exact_origin_login_and_unlabelled_control(tmp_path):
+    from playwright.async_api import async_playwright
+
+    from privacy_guard.browser import _OBSERVE_JS
+    from privacy_guard.tasks import TaskManager
+
+    executable = BrowserDriver(DATA_DIR, tmp_path, headless=True)._browser_executable()
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(executable_path=str(executable), headless=True)
+        try:
+            page = await browser.new_page()
+            # Fulfil all requests locally, including the official-looking origin.
+            await page.route("**/*", lambda route: route.fulfill(content_type="text/html", body="<body></body>"))
+            cases = [
+                ("https://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="uid">', "Aadhaar number"),
+                ("https://example.test", "Aadhaar - Login", '<input name="uid">', "uid"),
+                ("https://tathya.uidai.gov.in.example.test", "Aadhaar - Login", '<input name="uid">', "uid"),
+                ("http://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="uid">', "uid"),
+                ("https://tathya.uidai.gov.in", "Aadhaar profile", '<input name="uid">', "uid"),
+                ("https://tathya.uidai.gov.in", "Login", '<input name="uid">', "uid"),
+                ("https://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="uid" aria-label="Address">', "Address"),
+                ("https://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="uid" placeholder="OTP">', "OTP"),
+                ("https://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="uid" type="password">', "uid"),
+                ("https://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="captcha">', "captcha"),
+            ]
+            for origin, title, markup, expected in cases:
+                await page.goto(origin + "/fixture")
+                await page.set_content(f"<title>{title}</title>{markup}")
+                # Production navigation rejects public HTTP. This negative
+                # fixture still needs an observer nonce in an insecure context.
+                if origin.startswith("http:"):
+                    await page.evaluate("() => { crypto.randomUUID = () => 'synthetic-http-nonce'; }")
+                state = await page.evaluate(_OBSERVE_JS)
+                field = state["fields"][0]
+                assert field["label"] == expected, (origin, title, markup)
+                assert TaskManager.compatible(field, {"field_type": "aadhaar"}) == (expected == "Aadhaar number")
+        finally:
+            await browser.close()
+
+
+async def test_stop_during_cursor_motion_prevents_dispatch(tmp_path, monkeypatch):
+    from privacy_guard.browser_cursor import CURSOR_MOVE_JS
+
+    driver = BrowserDriver(tmp_path, tmp_path)
+    observation = {"epoch": "snapshot", "target_id": "owned", "url": "https://example.test/",
+                   "fields": [{"index": 1}]}
+    driver._observations["owned"] = observation
+    calls = []
+
+    async def context(*args):
+        return None, 1
+
+    async def call(page, context, function, *args):
+        calls.append(function)
+        if function == CURSOR_MOVE_JS:
+            driver.invalidate()
+        return {"ok": True}
+
+    monkeypatch.setattr(driver, "_context", context)
+    monkeypatch.setattr(driver, "_call", call)
+    with pytest.raises(BrowserError, match="task_stopped"):
+        await driver.execute("owned", observation, {"action": "click", "element_index": 1, "_approved": True})
+    assert calls == [CURSOR_MOVE_JS]
+
+
+@pytest.mark.skipif(os.environ.get("GUARD_BROWSER_TESTS") != "1", reason="Requires Chromium")
+async def test_visible_cursor_does_not_block_clicks_or_invalidate_observation(tmp_path):
+    from playwright.async_api import async_playwright
+
+    from privacy_guard.browser import _EXECUTE_JS, _OBSERVE_JS
+    from privacy_guard.browser_cursor import CURSOR_MOVE_JS
+    from privacy_guard.privacy_geometry import PRIVACY_REGIONS_JS
+
+    executable = BrowserDriver(DATA_DIR, tmp_path, headless=True)._browser_executable()
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(executable_path=str(executable), headless=True)
+        try:
+            page = await browser.new_page(viewport={"width": 1000, "height": 650})
+            await page.route("https://example.test/**", lambda route: route.fulfill(
+                content_type="text/html", body="""<!doctype html><title>Agent cursor preview</title>
+                <style>body{font:18px system-ui;background:#f1f5f9;padding:60px;color:#172033}
+                main{background:white;padding:36px;border-radius:20px;max-width:660px}
+                button{margin-top:30px;background:#172033;color:white;padding:18px 32px;border:0;border-radius:10px;font:inherit}
+                </style><main><h1>Visible browser actions</h1><p>The blue cursor moves to the next control before the agent acts.</p>
+                <button onclick="this.dataset.clicked='yes'">Compare options</button></main>"""))
+            await page.goto("https://example.test/")
+            state = await page.evaluate(_OBSERVE_JS)
+            assert len(state["fields"]) == 1
+            assert "Agent" not in state["text"]
+            await page.evaluate(CURSOR_MOVE_JS, {"type": "click", "index": 1})
+            await page.wait_for_timeout(550)
+            pointer = await page.evaluate("""() => {
+                const c = globalThis.__privacyGuardCursor;
+                const r = c.pointer.getBoundingClientRect();
+                return {x:r.x,y:r.y,target:document.elementFromPoint(c.x,c.y)?.tagName};
+            }""")
+            rect = state["fields"][0]["rect"]
+            assert abs(pointer["x"] - (rect["x"] + rect["width"] / 2)) < 1
+            assert abs(pointer["y"] - (rect["y"] + rect["height"] / 2)) < 1
+            assert pointer["target"] == "BUTTON"
+            geometry = await page.evaluate(PRIVACY_REGIONS_JS, [])
+            assert geometry["complete"], geometry["warnings"]
+            folder = os.environ.get("GUARD_UI_CAPTURE_DIR")
+            if folder:
+                from pathlib import Path
+                Path(folder).mkdir(parents=True, exist_ok=True)
+                await page.screenshot(path=str(Path(folder) / "browser-agent-cursor.png"))
+            result = await page.evaluate("args => (" + _EXECUTE_JS + ")(...args)", [
+                {"url": state["url"], "origin": "https://example.test", "epoch": state["epoch"]},
+                {"type": "click", "index": 1, "approved": True}, None])
+            assert result["ok"], result
+            assert await page.locator("button").get_attribute("data-clicked") == "yes"
+            # A real page mutation during animation still invalidates the action.
+            state = await page.evaluate(_OBSERVE_JS)
+            await page.evaluate(CURSOR_MOVE_JS, {"type": "click", "index": 1})
+            await page.locator("button").evaluate("e => e.textContent = 'Changed control'")
+            await page.wait_for_timeout(550)
+            result = await page.evaluate("args => (" + _EXECUTE_JS + ")(...args)", [
+                {"url": state["url"], "origin": "https://example.test", "epoch": state["epoch"]},
+                {"type": "click", "index": 1, "approved": True}, None])
+            assert result["error"] == "stale_observation"
+            # Re-observation must retain one cursor and a stable control map.
+            assert len((await page.evaluate(_OBSERVE_JS))["fields"]) == 1
         finally:
             await browser.close()

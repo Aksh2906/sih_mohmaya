@@ -21,7 +21,7 @@ const terminal = new Set([
   "outcome_unknown",
 ]);
 const text = (id, value) => {
-  $(id).textContent = value ?? "";
+  $(id).textContent = VeilLocale.t(value ?? "");
 };
 const show = (id, visible) => {
   $(id).hidden = !visible;
@@ -57,6 +57,9 @@ async function request(path, body, method) {
   }
   if (!response.ok) {
     if (response.status === 401) {
+      visualReview.clear();
+      pendingId = null;
+      currentTask = null;
       token = "";
       await chrome.storage.session.remove("dpg_token");
       show("pairing", true);
@@ -66,6 +69,7 @@ async function request(path, body, method) {
   }
   return data;
 }
+const visualReview = new VeilVisualReview(request, action, error);
 async function action(fn) {
   if (busy) return;
   busy = true;
@@ -134,13 +138,14 @@ async function loadRecords() {
     container.replaceChildren();
     if (!records.length) {
       const p = document.createElement("p");
-      p.textContent =
-        "No confirmed fields yet. Add a profile or review a document in the dashboard.";
+      p.textContent = VeilLocale.t(
+        "No confirmed fields yet. Add a profile or review a document in the dashboard.",
+      );
       container.append(p);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "empty-records-link";
-      button.textContent = "Open personal vault ↗";
+      button.textContent = VeilLocale.t("Open personal vault ↗");
       button.addEventListener("click", openDashboard);
       container.append(button);
       continue;
@@ -175,32 +180,60 @@ function renderTask(task) {
   text("task-goal", task.goal);
   text("step", "Step " + (task.step || 0));
   text("task-id", "Task " + task.id.slice(0, 8));
+  text("task-brief-text", task.brief || "");
+  show("task-brief", !!task.brief);
   const p = task.pending;
   pendingId = p?.id || null;
   show("approval", !!p);
+  if (!p) visualReview.clear();
   if (p) {
     const visual = ["image", "visual", "screenshot"].includes(p.kind);
     show("image-review", visual);
-    show("approve", !visual);
+    show("approve", true);
+    void visualReview.render(task);
+    if (!visual) $("approve").disabled = busy;
     text("approval-title", p.title || "Review this action");
     text("approval-payload", JSON.stringify(p.payload, null, 2));
+    const summary =
+      p.summary ||
+      (p.kind === "submit" && p.payload?.control
+        ? {
+            action:
+              VeilLocale.language === "hi"
+                ? `“${p.payload.control}” पर क्लिक करें।`
+                : `Click “${p.payload.control}”.`,
+            destination: p.payload.destination,
+            detail: p.payload.notice,
+          }
+        : null);
+    show("action-summary", !!summary && !visual);
+    text("action-description", summary?.action || "");
+    text(
+      "action-destination",
+      summary?.destination
+        ? VeilLocale.t("Website") + ": " + summary.destination
+        : "",
+    );
+    text("action-detail", summary?.detail || "");
     text(
       "approval-description",
       visual
-        ? "Open the dashboard to inspect the actual redacted screenshot, add masks, and approve its transmission. The original stays on this device."
+        ? "Inspect the screenshot, add masks if needed, and approve the next step. The original stays on this device."
         : p.kind === "model"
-          ? "Review what will reach the reasoning model. Deny if you see private information."
+          ? "Review the prepared context before the task continues. Deny if you see private information."
           : p.kind === "disclosure"
             ? "The selected references resolve to real values locally. This website may receive them as soon as they are entered."
-            : "Review the final action and destination. Approving permits this submission.",
+            : "Check the button and website below. Approval lets the agent perform this action.",
     );
     text(
       "approve",
-      p.kind === "model"
-        ? "Approve context"
-        : p.kind === "submit"
-          ? "Approve submit"
-          : "Approve disclosure",
+      visual
+        ? "Approve image"
+        : p.kind === "model"
+          ? "Approve context"
+          : p.kind === "submit"
+            ? "Allow action"
+            : "Approve disclosure",
     );
   }
   text("task-error", task.error || "");
@@ -251,10 +284,29 @@ function renderTask(task) {
   const resumable = ["paused", "waiting_input", "waiting_for_input"].includes(
     task.status,
   );
-  show("resume-information", resumable);
+  show("resume-information", resumable && !task.human_action);
+  show("human-action-note", resumable && !!task.human_action);
+  const stages = Array.isArray(task.plan) ? task.plan : [];
+  text(
+    "task-plan",
+    stages
+      .map(
+        (stage, index) =>
+          `${index + 1}. ${stage.title} (${stage.status.replaceAll("_", " ")})\n${stage.success_criteria}`,
+      )
+      .join("\n\n"),
+  );
+  show("task-plan", stages.length > 0);
   show("task-controls", !terminal.has(task.status));
   show("new-task", terminal.has(task.status));
-  text("pause", resumable ? "Resume with fields" : "Pause");
+  text(
+    "pause",
+    resumable
+      ? task.human_action
+        ? "I've finished — continue"
+        : "Resume with fields"
+      : "Pause",
+  );
 }
 async function poll() {
   if (!token || pollInFlight) return;
@@ -262,6 +314,15 @@ async function poll() {
   try {
     const wasUnlocked = status?.vault.unlocked;
     status = await request("/status");
+    if (!status.vault.unlocked) {
+      visualReview.clear();
+      pendingId = null;
+      currentTask = null;
+      taskId = null;
+      text("approval-payload", "");
+      text("task-brief-text", "");
+      await chrome.storage.session.remove("dpg_task");
+    }
     if (status.vault.unlocked && !wasUnlocked) {
       await loadRecords();
       await updateTarget();
@@ -346,7 +407,9 @@ $("task-form").addEventListener("submit", (e) => {
   e.preventDefault();
   void action(async () => {
     const startUrl = $("start-url").value.trim();
-    if (!startUrl)
+    const useCurrentTab =
+      $("use-current-tab").checked || $("mode").value === "demo";
+    if (!startUrl && useCurrentTab)
       await updateTarget().catch(() => {
         currentTarget = null;
       });
@@ -354,12 +417,14 @@ $("task-form").addEventListener("submit", (e) => {
       goal: $("goal").value,
       ...(startUrl
         ? { start_url: startUrl }
-        : currentTarget
+        : useCurrentTab && currentTarget
           ? { target_id: currentTarget }
           : {}),
       mode: $("mode").value,
       vision: $("mode").value === "remote" && $("vision").checked,
+      language: VeilLocale.language,
       review_text: $("mode").value === "demo" || $("review-text").checked,
+      image_review: $("review-every-image").checked ? "always" : "sensitive",
       stop_before_submit: $("stop-before-submit").checked,
       record_ids: [...$("record-list").querySelectorAll("input:checked")].map(
         (i) => i.value,
@@ -440,7 +505,7 @@ $("pause").addEventListener(
       ].includes(currentTask?.status);
       return request("/tasks/" + taskId + "/control", {
         action: resumable ? "resume" : "pause",
-        ...(resumable
+        ...(resumable && !currentTask?.human_action
           ? {
               record_ids: [
                 ...$("resume-record-list").querySelectorAll("input:checked"),
@@ -466,8 +531,10 @@ $("approve").addEventListener(
       if (
         ["image", "visual", "screenshot"].includes(currentTask?.pending?.kind)
       ) {
-        openDashboard("activity");
-        return;
+        if (!visualReview.canApprove(pendingId))
+          throw new Error(
+            "Inspect the current redacted image and apply pending masks first.",
+          );
       }
       await request("/tasks/" + taskId + "/approve", {
         approval_id: pendingId,
@@ -560,3 +627,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   respond({ received: true });
 });
 void start().catch((e) => error(e.message));
+
+window.addEventListener("veil:language", () => {
+  if (currentTask) renderTask(currentTask);
+});

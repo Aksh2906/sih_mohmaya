@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Record a task · Dev Privacy Guard</title>
+    <title>Record a task · Veil</title>
     <link rel="stylesheet" href="sidepanel.css" />
     <link rel="stylesheet" href="capture.css" />
   </head>
@@ -11,7 +11,7 @@
     <main class="capture-workspace">
       <div class="brand">
         <span class="brand-mark">↳</span>
-        <div>dev<span>.</span><small>privacy guard</small></div>
+        <div>Veil</div>
       </div>
       <span class="eyebrow">VOICE INPUT · YOU CONTROL THE SEND</span>
       <h1>Say your task.<br /><em>Review the words.</em></h1>
@@ -39,15 +39,14 @@
           aria-label="Listen to local recording"
         ></audio>
         <div class="audio-disclosure">
-          <strong>Audio is sent unredacted to OpenAI.</strong>
+          <strong>Audio stays on this machine.</strong>
           <p>
-            This happens only when you click Transcribe with Whisper. No audio
-            redaction is applied. The separate Whisper key is managed in your
-            local dashboard.
+            Local multilingual Whisper transcribes English and Hindi without an
+            API key. Review the transcript before starting a task.
           </p>
         </div>
         <button id="transcribe" class="button primary full" disabled>
-          Transcribe with Whisper
+          Transcribe locally
         </button>
       </section>
       <section id="transcript-section" hidden>
@@ -77,6 +76,7 @@
         Close this tab to discard the recording and transcript kept here.
       </p>
     </main>
+    <script src="locale.js"></script>
     <script src="capture.js"></script>
   </body>
 </html>

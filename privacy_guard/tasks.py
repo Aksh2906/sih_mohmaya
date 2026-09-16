@@ -8,11 +8,13 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from .browser import SELECTION_REJECTIONS, BrowserError
+from .action_summary import approval_summary
+from .browser import BROWSER_ERROR_MESSAGES, SELECTION_REJECTIONS, BrowserError
 from .diagnostics import logger, task_id
 from .gateway import ModelGateway, digest, normalize
 from .models import TaskRequest
 from .privacy import sanitize_observation, sanitize_text
+from .task_brief import build_task_brief
 
 
 def now():
@@ -81,27 +83,32 @@ class TaskManager:
         if not start_url and not request.target_id:
             match = re.search(r"https?://[^\s<>\"']+", request.goal)
             start_url = match.group(0).rstrip(".,;)") if match else None
-        if start_url:
-            destination = origin(start_url)
-            parsed = urlsplit(start_url)
-            if parsed.hostname in ("127.0.0.1", "localhost", "::1") and parsed.port != self.demo_port:
-                raise ValueError("The agent cannot access the dashboard or other local services")
-            if request.mode == "remote" and not self.gateway.settings()["configured"]:
-                raise ValueError("Configure a hosted model and API key first")
-            if not self.browser.status().get("running"):
-                await self.browser.launch()
-            tab = await self.browser.new_page(start_url)
-        else:
-            tabs = await self.browser.tabs()
-            tab = next((t for t in tabs if t["target_id"] == request.target_id), None)
-        if not tab:
-            raise ValueError("The selected tab is not in the controlled browser")
-        destination = origin(tab["url"])
-        parsed = urlsplit(tab["url"])
-        if parsed.hostname in ("127.0.0.1", "localhost", "::1") and parsed.port != self.demo_port:
-            raise ValueError("The agent cannot access the dashboard or other local services")
+        discover_site = not start_url and not request.target_id and request.mode == "remote"
         if request.mode == "remote" and not self.gateway.settings()["configured"]:
             raise ValueError("Configure a hosted model and API key first")
+        if discover_site:
+            # Resolve the URL in the task worker before opening any browser page.
+            # Returning the task now also makes optional model review cancellable.
+            tab = {"target_id": None, "url": ""}
+            destination = ""
+        else:
+            if start_url:
+                destination = origin(start_url)
+                parsed = urlsplit(start_url)
+                if parsed.hostname in ("127.0.0.1", "localhost", "::1") and parsed.port != self.demo_port:
+                    raise ValueError("The agent cannot access the dashboard or other local services")
+                if not self.browser.status().get("running"):
+                    await self.browser.launch()
+                tab = await self.browser.new_page(start_url)
+            else:
+                tabs = await self.browser.tabs()
+                tab = next((t for t in tabs if t["target_id"] == request.target_id), None)
+            if not tab:
+                raise ValueError("The selected tab is not in the controlled browser")
+            destination = origin(tab["url"])
+            parsed = urlsplit(tab["url"])
+            if parsed.hostname in ("127.0.0.1", "localhost", "::1") and parsed.port != self.demo_port:
+                raise ValueError("The agent cannot access the dashboard or other local services")
         identifier = secrets.token_hex(8)
         task = {
             "id": identifier,
@@ -116,10 +123,14 @@ class TaskManager:
             "target_id": tab["target_id"],
             "destination": destination,
             "_goal": request.goal,
+            "language": request.language,
+            "brief": build_task_brief(request.goal, request.language, self.vault.secrets()),
             "_origin": destination,
             "_vision": request.vision,
+            "_image_review": request.image_review,
             "_stop_before_submit": getattr(request, "stop_before_submit", True),
             "_review_text": getattr(request, "review_text", False),
+            "_discover_site": discover_site,
             "_record_ids": request.record_ids,
             "_history": [],
             "_refs": {},
@@ -128,7 +139,8 @@ class TaskManager:
         self.tasks[identifier] = task
         self.event(
             task,
-            "Task website opened in a controlled tab."
+            "Asking the model for the destination URL before opening the browser."
+            if discover_site else "Task website opened in a controlled tab."
             if start_url
             else "Task bound to the selected browser tab.",
         )
@@ -182,6 +194,7 @@ class TaskManager:
             "kind": kind,
             "title": title,
             "payload": deepcopy(payload),
+            "summary": approval_summary(kind, payload, task.get("language", "en")),
             "expires_at": time.time() + self.approval_seconds,
         }
         task["status"] = "awaiting_approval"
@@ -259,6 +272,14 @@ class TaskManager:
                 if not set(record_ids).issubset(available):
                     raise ValueError("Some selected records are no longer available")
                 task["_record_ids"] = list(record_ids)
+            human_action = task.get("human_action")
+            if human_action:
+                task["_human_resume"] = {
+                    "kind": human_action["kind"],
+                    "instruction": "The user reports completing the browser step. Observe fresh state to verify it and continue the original goal. If the challenge remains, hand back to the user.",
+                }
+                task["human_action"] = None
+            task["result"] = None
             task["status"] = "observing"
             self.launch(task)
             return self.public(task)
@@ -308,13 +329,43 @@ class TaskManager:
     @staticmethod
     def compatible(field, record):
         kind = normalize(record["field_type"])
-        label = normalize(field.get("label", ""))
+        raw_label = field.get("label", "")
+        label = normalize(raw_label)
         input_type = field.get("input_type", "text")
-        if input_type in ("password", "hidden", "file", "submit", "button", "checkbox", "radio"):
+        if input_type in ("hidden", "file", "submit", "button", "checkbox", "radio"):
+            return False
+        if input_type == "password":
+            return kind == "password"
+        if kind == "password":
+            return False
+        if kind == "username" and not re.search(r"user.?name|user.?id|उपयोगकर्ता", raw_label, re.I):
+            return False
+        aadhaar_types = {"aadhaar", "aadhar", "aadhaarnumber", "aadharnumber"}
+        # Address labels often include qualifiers or a required-field marker.
+        # Email address must be classified before the general postal address.
+        if "emailaddress" in label or "ईमेल" in raw_label:
+            label = "email"
+        elif re.search(r"\baddress\b|पता", raw_label, re.I) or label in {
+            "addressline1", "addressline2", "postaladdress", "streetaddress", "homeaddress",
+            "residentialaddress", "permanentaddress", "currentaddress", "mailingaddress",
+            "correspondenceaddress", "shippingaddress", "billingaddress",
+        }:
+            label = "address"
+        elif ("aadhaar" in label or "aadhar" in label or "आधार" in raw_label) and not any(
+            attribute in label or attribute in raw_label for attribute in (
+                "name", "address", "birth", "dob", "phone", "mobile", "email", "otp",
+                "captcha", "enrol", "enroll", "virtual", "vid",
+                "नाम", "पता", "जन्म", "मोबाइल", "फ़ोन", "ईमेल", "ओटीपी", "कैप्चा",
+            )
+        ):
+            label = "aadhaar"
+        # An identity number must never use the permissive fallback for an
+        # unknown field. Require an affirmative Aadhaar-number destination.
+        if kind in aadhaar_types and label != "aadhaar":
             return False
         if input_type == "email" and kind not in ("email", "emailaddress"):
             return False
-        if input_type == "tel" and kind not in ("phone", "telephone", "mobile"):
+        if input_type == "tel" and label != "aadhaar" and kind not in ("phone", "telephone", "mobile"):
             return False
         # Unrecognized fields are reviewed individually, but clear type conflicts are rejected.
         families = {
@@ -323,6 +374,11 @@ class TaskManager:
             "phone": {"phone", "telephone", "mobile"},
             "fullname": {"name", "personname", "fullname"},
             "statementtotal": {"money", "amount", "total", "statementtotal"},
+            "address": {
+                "address", "postaladdress", "streetaddress", "residentialaddress", "permanentaddress",
+                "currentaddress", "mailingaddress", "correspondenceaddress", "shippingaddress", "billingaddress",
+            },
+            "aadhaar": aadhaar_types,
         }
         return label not in families or kind in families[label]
 
@@ -359,7 +415,7 @@ class TaskManager:
                         "x", 0
                     ) < raw.get("width", 10000)
                 task["status"] = "sanitizing"
-                private = self.vault.secrets() + ([self.gateway.api_key] if self.gateway.api_key else [])
+                private = self.vault.secrets() + self.gateway.api_keys + self.gateway.fallback_api_keys
                 private += [
                     str(field["value"])
                     for field in raw.get("fields", [])
@@ -529,11 +585,18 @@ class TaskManager:
                     task["error"] += " Browser status: " + str(exc)
             else:
                 task["status"] = "failed"
-                task["error"] = "Task paused safely: " + (
-                    sanitize_text(str(exc), self.vault.secrets())
-                    if isinstance(exc, ValueError) and self.vault.unlocked
-                    else type(exc).__name__
-                )
+                if isinstance(exc, BrowserError):
+                    code = str(exc) if str(exc) in BROWSER_ERROR_MESSAGES else "browser_error"
+                    logger.error("task.browser_failed code=%s", code)
+                    task["error"] = BROWSER_ERROR_MESSAGES.get(
+                        code, "The browser could not complete this step. Inspect the page before starting a fresh task."
+                    )
+                else:
+                    task["error"] = "Task paused safely: " + (
+                        sanitize_text(str(exc), self.vault.secrets())
+                        if isinstance(exc, ValueError) and self.vault.unlocked
+                        else type(exc).__name__
+                    )
             self.event(task, task["error"], "error")
         finally:
             logger.info("task.run.finished status=%s step=%s", task["status"], task["step"])

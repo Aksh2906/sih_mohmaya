@@ -52,17 +52,43 @@ If the extension is already installed, just open its side panel and pair. Use th
    Open this website and complete the application using my selected profile. Fill available details first, ask for missing documents, and stop before final submission.
    ```
 
-3. Keep visual checkpoints and stop-before-submission enabled, then start. The website does not need to be open beforehand.
-4. When screenshot approval appears, open dashboard review. Compare the original local image and the redacted outgoing image, add masks if needed, and approve the latest request.
+3. Keep visual planning and stop-before-submission enabled, then start. The website does not need to be open beforehand.
+4. When screenshot approval appears, review in the extension or dashboard. Compare the original local image and the redacted outgoing image, add masks if needed, and approve the latest request.
 5. When the agent asks for missing information, upload `demo/documents/portal-statement.txt` in **Documents**. Review and confirm the extracted facts.
 6. Return to the waiting task, select the newly confirmed records along with the original profile records, and choose **Resume**.
 7. Inspect the completed form or review page. Final submission is withheld by default.
 
 The portal is fictional. The original form at `http://127.0.0.1:8766/` also has a deterministic **Demo** mode that needs no API key; that mode does not run the multi-step portal agent.
 
+## Start from a task without a URL
+
+Choose **New task**, select **Remote**, and describe what to do—for example, “Find wireless headphones on Amazon, compare three options, and show me the best match.” Leave **Starting website** empty and keep **Let the agent choose a website** selected. The agent opens the controlled browser, discovers a relevant site, then works through the task. You can also supply a URL or select an existing controlled tab.
+
+Watch the blue **Agent** cursor move before clicks, field entry, dropdown selections and scrolling. Destination changes and sensitive actions still use the existing review flow, and final submission stays withheld by default. In the extension, **Use the current tab instead of finding a website** binds the task to the current page. Reload the extension after updating its files.
+
 ## Optional voice input
 
-Save a separate OpenAI Whisper key in **Settings → Voice transcription**. Record your instruction, stop, then choose **Transcribe with Whisper**. The original audio is uploaded unredacted to OpenAI. Edit the returned text before starting the task; transcription does not start it automatically. From the extension recording tab, choose **Use transcript** to put it into your task draft.
+Run `.venv/bin/python scripts/speech_install.py` once if the local speech model is missing. Record in English or Hindi, stop, then choose **Transcribe locally**. Audio stays on this machine; no API key is needed. Review the editable transcript before explicitly starting a task. In the extension, choose **Use transcript in task** to update the draft.
+
+## Login and other browser handoffs
+
+When a service needs login, OTP, CAPTCHA or a manual action, the task waits for you
+without losing its goal, selected vault fields or stage plan. Complete the step on
+the website in the controlled browser, then choose **I've finished — continue** in
+the dashboard or extension. Do not save passwords, OTPs or CAPTCHA answers as vault
+records for this handoff. The agent reads fresh page state before continuing; if the
+challenge is still present, it asks you to complete it again.
+
+The task plan shows stages and their success criteria. The agent can consult public
+search engines and official help pages, record observed sources, and revise the plan
+as it proceeds. Public searches must not contain private profile values. Reaching an
+intermediate page does not count as completion: a separate model check evaluates the
+fresh page against the original goal. A per-run step limit pauses for review and can
+resume the same task.
+
+For “Open UIDAI's official myAadhaar beta portal and navigate to the Download Aadhaar
+page in English”, success means reaching that page. It does not mean a PDF has been
+saved; automated file saving is not added by the login handoff.
 
 ## Stop and restart
 

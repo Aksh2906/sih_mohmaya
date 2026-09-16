@@ -15,8 +15,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
-from .audio import MAX_AUDIO_BYTES, WhisperTranscriber, audio_format
-from .config import DATA_DIR, DEMO_PORT, PORT, ROOT
+from .audio import MAX_AUDIO_BYTES, LocalTranscriber, audio_format
+from .config import DATA_DIR, DEMO_PORT, PORT, ROOT, migrate_provider_settings
 from .diagnostics import logger, request_id
 from .documents import calculate_total, extract_document
 from .gateway import ModelGateway, validate_endpoint
@@ -44,8 +44,7 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
 
         browser = BrowserDriver(data_dir, ROOT / "apps/extension")
     gateway = ModelGateway()
-    transcriber = WhisperTranscriber()
-    gateway.extra_secrets = lambda: [transcriber.api_key] if transcriber.api_key else []
+    transcriber = LocalTranscriber()
     manager = TaskManager(vault, browser, gateway, DEMO_PORT, PORT)
     sessions = {}
     code = pairing_code or secrets.token_urlsafe(12)
@@ -59,7 +58,7 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
     async def lifespan(app):
         if not testing:
             print(
-                f"\nDev Privacy Guard {__version__}\nDashboard: http://127.0.0.1:{PORT}\n"
+                f"\nVeil {__version__}\nDashboard: http://127.0.0.1:{PORT}\n"
                 f"Pairing code (valid 30 minutes): {code}\n"
                 "Use this code in the dashboard and extension. Keep this terminal running.\n",
                 flush=True,
@@ -77,7 +76,7 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
                     vault.lock()
 
     app = FastAPI(
-        title="Dev Privacy Guard",
+        title="Veil",
         version=__version__,
         lifespan=lifespan,
         docs_url=None,
@@ -93,7 +92,7 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
     app.state.transcriber = transcriber
 
     def provider_settings():
-        return {**gateway.settings(), "whisper_configured": transcriber.configured}
+        return {**gateway.settings(), "speech_ready": transcriber.configured, "speech_provider": "local"}
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
@@ -141,9 +140,7 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
                     or path.startswith("/api/v1/documents")
                     or path.startswith("/api/v1/vault")
                     or path.startswith("/api/v1/calculations")
-                    or path.endswith("/image-preview")
-                    or path.endswith("/masks")
-                    or (request.method != "GET" and path in ("/api/v1/settings", "/api/v1/demo/seed"))
+                    or (request.method != "GET" and (path.startswith("/api/v1/settings") or path == "/api/v1/demo/seed"))
                 ):
                     return JSONResponse(
                         {"detail": "Use the paired dashboard for private data management"}, status_code=403
@@ -267,10 +264,15 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
         vault.unlock(body.passphrase)
         manager.restore()
         saved = vault.load_blob("provider_settings", {})
-        for key in ("mode", "model", "base_url", "api_key", "fallback_model", "fallback_api_key"):
+        migrated = migrate_provider_settings(saved)
+        migrated = {key: value for key, value in migrated.items() if key != "whisper_api_key"}
+        if migrated != saved:
+            vault.save_blob("provider_settings", migrated)
+        saved = migrated
+        for key in ("mode", "model", "base_url", "api_key", "fallback_model", "fallback_api_key",
+                    "api_keys", "fallback_api_keys"):
             if key in saved:
                 setattr(gateway, key, saved[key])
-        transcriber.api_key = saved.get("whisper_api_key", "")
         return {"unlocked": True}
 
     @app.post("/api/v1/vault/lock")
@@ -297,8 +299,6 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
         require_unlock()
         content_type = request.headers.get("content-type", "")
         audio_format(content_type)
-        if not transcriber.configured:
-            raise ValueError("Add your OpenAI Whisper API key in dashboard Settings first")
         recording = bytearray()
         async for chunk in request.stream():
             recording.extend(chunk)
@@ -434,23 +434,37 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
         require_unlock()
         if any(not worker.done() for worker in manager.workers.values()):
             raise ValueError("Pause the active task before changing model settings")
-        gateway.base_url = validate_endpoint(body.base_url)
-        gateway.mode, gateway.model = body.mode, body.model.strip()
+        if "base_url" in body.model_fields_set:
+            gateway.base_url = validate_endpoint(body.base_url)
+        if "mode" in body.model_fields_set:
+            gateway.mode = body.mode
+        if "model" in body.model_fields_set:
+            gateway.model = body.model.strip()
         if body.api_key is not None:
             gateway.api_key = body.api_key.strip()
+        if "api_keys" in body.model_fields_set:
+            gateway.api_keys = list(body.api_keys or [])
+        if "fallback_api_keys" in body.model_fields_set:
+            gateway.fallback_api_keys = list(body.fallback_api_keys or [])
         if "fallback_model" in body.model_fields_set:
             gateway.fallback_model = body.fallback_model.strip()
         if "fallback_api_key" in body.model_fields_set:
             gateway.fallback_api_key = (body.fallback_api_key or "").strip()
-        if "whisper_api_key" in body.model_fields_set:
-            transcriber.clear()
-            transcriber.api_key = (body.whisper_api_key or "").strip()
         vault.save_blob(
             "provider_settings",
-            {**gateway.settings(), "api_key": gateway.api_key,
-             "fallback_api_key": gateway.fallback_api_key, "whisper_api_key": transcriber.api_key},
+            {**gateway.settings(), "provider_settings_version": 2, "api_keys": gateway.api_keys,
+             "fallback_api_keys": gateway.fallback_api_keys},
         )
         return provider_settings()
+
+    @app.post("/api/v1/settings/check")
+    async def check_provider_keys():
+        from .provider_checks import check_keys
+
+        require_unlock()
+        if any(not worker.done() for worker in manager.workers.values()):
+            raise ValueError("Pause the active task before checking provider keys")
+        return {"checks": await check_keys(gateway, lambda: vault.unlocked)}
 
     @app.post("/api/v1/browser/launch")
     async def launch_browser():
@@ -516,13 +530,6 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
     @app.post("/api/v1/tasks/{task_id}/approve")
     async def approve(task_id: str, body: ApprovalRequest, request: Request):
         require_unlock()
-        pending = manager.tasks[task_id].get("pending")
-        if (
-            request.state.interface_role == "extension"
-            and pending
-            and pending["kind"] == "image"
-        ):
-            raise HTTPException(403, "Review and approve the exact screenshot in the dashboard")
         return manager.approve(task_id, body.approval_id, body.approved)
 
     @app.get("/api/v1/tasks/{task_id}/image-preview")

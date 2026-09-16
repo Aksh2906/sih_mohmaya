@@ -1,0 +1,72 @@
+Mode: built-in image_gen
+
+Use case: infographic-diagram.
+Create a polished redesigned USER WORKFLOW for Dev Privacy Guard, full intended product vision. This is user-facing, not a technical-stack diagram. Make the flow mostly linear and immediately understandable by professors. Exactly 12 equal rounded cards, arranged 3 ROWS × 4 COLUMNS, numbered 01–12. All three rows flow LEFT TO RIGHT. Connect 01→02→03→04 across row1; clear thin continuation line through gutter from 04 to top of 05; 05→06→07→08 across row2; continuation from 08 to top of 09; 09→10→11→12 across row3. Main flow only, NO decision diamonds, tangled loops, reverse snake rows, or extra cards. Conditional step 09 explicitly marked "If needed" so missing information is not inevitable.
+Style: spacious white opaque background, refined humanist sans-serif (Aptos-like), medium-weight headings, regular body. NO heavy condensed fonts or oversized bold titles. Pastel blue row1, lavender/pink row2, cream/mint row3. Thin borders, small simple line icon per card. Short noun phrases only, no complete sentences. Two concise content lines per card, plus a small understated italic tag where specified. Generous spacing. Landscape 16:9, high resolution, exact legible text. No technical jargon except familiar HITL / AI. Use 12 cards to expose the USPs with clarity, without tiny dense text.
+
+Title: "User Workflow"
+Subtitle: "Dev Privacy Guard · Full Product Vision"
+
+CARD 01 "Give a Goal"
+line1 "Text / Voice + Editable Draft"
+line2 "“Fill this form”"
+small tag "Optional voice input"
+
+CARD 02 "Choose Your Profile"
+line1 "Encrypted Vault + Saved Facts"
+line2 "Reusable Profiles + Documents"
+small tag "Less repeated data entry"
+
+CARD 03 "Open & Navigate"
+line1 "Website Discovery + Navigation"
+line2 "Automatic Form Discovery"
+
+CARD 04 "Watch Page Changes"
+line1 "Local Screen Understanding"
+line2 "Visual Cache + Changed Regions"
+small tag "Less repeated processing"
+
+CARD 05 "Detect & Redact"
+line1 "Faces + Passwords + Personal Text"
+line2 "Confidence-Aware Masking"
+small tag "Uncertainty → wider masks"
+
+CARD 06 "HITL + Masking"
+line1 "Original / Redacted Preview"
+line2 "Mask Editing + Send Approval"
+small tag "Exact outgoing context"
+
+CARD 07 "Self-Hosted AI"
+line1 "Sanitized Context Only"
+line2 "Next-Step Planning"
+small tag "No raw screenshots"
+
+CARD 08 "Private Autofill"
+line1 "AI-Selected Fields + Local Values"
+line2 "Approved Website Disclosure"
+small tag "Values hidden from reasoning AI"
+
+CARD 09 "Missing Details"
+line1 "Document Upload / Direct Input"
+line2 "Local Extraction + Fact Review"
+small tag "If needed · Save by choice"
+
+CARD 10 "Resume Task"
+line1 "Same-Task Continuation"
+line2 "Page Re-check + Refreshed Facts"
+
+CARD 11 "Review & Approve"
+line1 "Completed-Form Verification"
+line2 "Submit / Pay: Final Approval"
+small tag "No approval → stay paused"
+
+CARD 12 "Results + Dashboard"
+line1 "Progress + Privacy Metrics"
+line2 "Redaction IoU + Latency + Resources"
+small tag "Labeled evaluation data"
+
+Single subtle footer line, not another panel:
+"Pause / Resume / Stop · Target features, not all implemented · Current voice: cloud transcription"
+Do not omit last footer clause because raw voice currently goes to cloud transcription. Main reasoning still self-hosted.
+Product distinction: private values reach authorized website but NOT reasoning model, no absolute all-data-always-local claim.
+No extra charts, no logos, no fake metrics, no model names. Opaque pure-white canvas, no transparent artifacts. All content short, tidy, balanced and readable.

@@ -1,0 +1,22 @@
+Mode: built-in image_gen edit
+
+Redesign the attached Dev Privacy Guard workflow, preserving ONLY its olive/forest/cream/tan/orange palette and small brand logo. User says it looks too much like a rigid grid, wants a REAL FLOWCHART like the earlier branching diagram, with decision diamonds, database cylinder, asymmetrical arranged process boxes, fewer loops. NOT nine cards, NOT numbered tiles, NOT a rigid 3x3 grid. Use a carefully composed branching flowchart with whitespace, rounded orthogonal connectors, only two local return loops. Landscape 16:9, large high-resolution readable text.
+
+Palette #606C38 olive, #283618 deep forest, #FEFAE0 cream, #DDA15E tan, #BC6C25 burnt orange. Opaque warm cream canvas. Thin olive outlines, pale cream/olive process fills, pale tan human review, burnt orange connector accents for human input. Clean medium humanist sans-serif headings and regular concise labels, no giant heavy banner. Tiny existing shield-browser logo with Dev Privacy Guard in upper left, title "User Workflow" centered, subtitle "Local privacy · Human control · Self-hosted reasoning".
+
+Composition and EXACT main workflow:
+Upper-left small rounded start "Give a Goal" / "Text / Voice + Editable Draft" -> adjacent "Open Website" / "Discovery + Navigation" -> upper-middle wider "Local Scan + Redaction" / "Faces · Passwords · Personal Text" / "Confidence-Aware Masks" -> upper-right diamond "HITL Review".
+From HITL Review a SHORT local arrow labeled "Edit masks" goes back to Local Scan + Redaction; a forward DOWN arrow labeled "Approve" goes to right-middle rounded box "Self-Hosted AI" / "Sanitized Context Only" / "Next-Step Planning".
+From Self-Hosted AI a LEFTWARD arrow leads to center-middle rounded box "Private Autofill" / "Local References + Approved Fields". From Private Autofill a DOWN arrow leads to central-lower diamond "Missing Details?".
+From Missing Details? a LEFT branch labeled "Yes" goes to lower-left rounded tan box "Add Details + Resume" / "Local OCR + Fact Review" / "Save by Choice · Same Task". From this box route ONE return line up the left side of the central local region to Local Scan + Redaction, labeled "Re-check page". Route with no crossing other shapes, distinguish clearly from data input arrows.
+From Missing Details? a RIGHT branch labeled "No" leads to lower-right tan rounded box "Final Review" / "Submit / Pay: Explicit Approval". From Final Review a RIGHT arrow labeled "Approve" leads to small green terminal "Complete". A small downward branch labeled "Decline" ends at small neutral terminal "Stay Paused".
+
+Profile database cylinder in left-middle whitespace, labeled "Encrypted Profile Vault", smaller supporting text "Reusable Facts + Documents". It has exactly ONE arrow to Private Autofill labeled "Local values"; it MUST NOT connect to Self-Hosted AI. No duplicate database and no independent top-to-bottom arrows crossing start path.
+
+A subtle LOCAL DEVICE shaded group may enclose scan, vault, autofill only if possible without accidentally enclosing Self-Hosted AI. Do not force a group if that complicates layout. Label scan "On device" small.
+
+Unconnected narrow feature strip at bottom:
+"Visual Cache + Change Detection  ·  Pause / Resume / Stop  ·  Dashboard: IoU + Latency + Resources"
+Footer tiny: "Full product vision · Some features planned · Current voice: cloud transcription"
+
+Important: the map should feel organically laid out as a real flowchart, not a slide full of feature cards. Different shapes carry meaning. Arrange nodes so all texts legible, no node overcrowding, long arrows kept to minimum. Preserve all arrow labels and semantic directions. Only TWO feedback loops (mask correction, missing-information resume). All other branches terminate or proceed. No arrow crossing text, no hidden lines, no extra ambiguous connectors. Short text as specified, small minimal icons if useful but no repetition of logo. Attractive editorial diagram with balanced negative space.

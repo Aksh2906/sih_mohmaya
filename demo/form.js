@@ -10,5 +10,5 @@ document.getElementById("start-again").addEventListener("click", () => {
   document.getElementById("application").reset();
   document.getElementById("application").hidden = false;
   document.getElementById("confirmation").hidden = true;
-  document.title = "Local application · Dev Privacy Guard demo";
+  document.title = "Local application · Veil demo";
 });

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Trash2, Upload, LoaderCircle } from "lucide-react";
 import { api } from "./api";
@@ -92,7 +93,7 @@ export function VoiceInput({
           setError("Recording is too large. Record a shorter task.");
         else if (blob.size) {
           setAudio(blob);
-          setNote("Recording is local. Listen or discard before sending.");
+          setNote("Recording is local. Listen or discard before transcribing.");
         }
       };
       rec.start();
@@ -142,16 +143,16 @@ export function VoiceInput({
         >
           {recording ? <Square size={14} /> : <Mic size={15} />}
           {starting
-            ? "Requesting microphone…"
+            ? t("Requesting microphone…")
             : recording
-              ? "Stop recording"
+              ? t("Stop recording")
               : audio
-                ? "Record again"
-                : "Record task"}
+                ? t("Record again")
+                : t("Record task")}
         </button>
         {recording && (
           <span className="voice-state" role="status">
-            Recording locally · up to 60 seconds
+            {t("Recording locally · up to 60 seconds")}
           </span>
         )}
         {audio && (
@@ -166,7 +167,7 @@ export function VoiceInput({
               }}
             >
               <Trash2 size={14} />
-              Discard
+              {t("Discard")}
             </button>
             <button
               type="button"
@@ -179,7 +180,7 @@ export function VoiceInput({
               ) : (
                 <Upload size={14} />
               )}{" "}
-              {busy ? "Transcribing…" : "Transcribe with Whisper"}
+              {busy ? t("Transcribing…") : t("Transcribe locally")}
             </button>
           </>
         )}
@@ -189,21 +190,22 @@ export function VoiceInput({
           controls
           src={audioUrl}
           preload="metadata"
-          aria-label="Listen to local recording"
+          aria-label={t("Listen to local recording")}
         />
       )}
       <p className="voice-disclosure">
-        Audio is sent unredacted to OpenAI only when you choose Transcribe.
-        Whisper uses the separate key in Settings.
+        {t(
+          "Recordings are transcribed on this machine. No API key or audio upload is needed.",
+        )}
       </p>
       {note && (
         <p className="voice-note" role="status">
-          {note}
+          {t(note)}
         </p>
       )}
       {error && (
         <p className="form-error" role="alert">
-          {error}
+          {t(error)}
         </p>
       )}
     </div>

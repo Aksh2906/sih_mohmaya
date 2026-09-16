@@ -13,4 +13,5 @@ uv sync --frozen
 npm --prefix apps/dashboard ci
 npm --prefix apps/dashboard run build
 uv run scripts/browser_install.py
+uv run scripts/speech_install.py
 echo "Setup complete. Run ./scripts/start.sh and pair the dashboard with the terminal code."

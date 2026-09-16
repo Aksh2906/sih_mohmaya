@@ -1,118 +1,118 @@
-"""Explicit cloud transcription. Audio is unredacted, transient, and never starts a task."""
+"""Bounded, cancellable local speech recognition; recordings never leave this machine."""
 
 import asyncio
-import json
+import io
+import multiprocessing
+import os
+import time
+from pathlib import Path
 
-import httpx
+from .config import DATA_DIR
 
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
-MAX_TRANSCRIPT_BYTES = 128 * 1024
-WHISPER_ENDPOINT = "https://api.openai.com/v1/audio/transcriptions"
 FORMATS = {
-    "audio/webm": "webm",
-    "video/webm": "webm",
-    "audio/ogg": "ogg",
-    "audio/wav": "wav",
-    "audio/wave": "wav",
-    "audio/x-wav": "wav",
-    "audio/mpeg": "mp3",
-    "audio/mp3": "mp3",
-    "audio/mp4": "m4a",
-    "video/mp4": "mp4",
-    "audio/m4a": "m4a",
-    "audio/x-m4a": "m4a",
-    "audio/flac": "flac",
+    "audio/webm": "webm", "video/webm": "webm", "audio/ogg": "ogg", "audio/wav": "wav",
+    "audio/wave": "wav", "audio/x-wav": "wav", "audio/mpeg": "mp3", "audio/mp3": "mp3",
+    "audio/mp4": "m4a", "video/mp4": "mp4", "audio/m4a": "m4a", "audio/x-m4a": "m4a", "audio/flac": "flac",
 }
 
 
 def audio_format(content_type: str) -> tuple[str, str]:
     mime = content_type.split(";", 1)[0].strip().lower()
-    extension = FORMATS.get(mime)
-    if not extension:
+    if mime not in FORMATS:
         raise ValueError("Use a WebM, WAV, MP3, MP4, M4A, OGG, or FLAC recording")
-    return mime, extension
+    return mime, FORMATS[mime]
 
 
-class WhisperTranscriber:
-    """One bounded upload at a time; credentials and pending work are cleared on lock."""
+def _recognize(data, model_path, connection):
+    # Isolated process permits cancellation on lock; no recording files or network.
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    try:
+        import onnxruntime
+        onnxruntime.disable_telemetry_events()
+        from faster_whisper import WhisperModel
 
-    def __init__(self):
-        self.api_key = ""
+        model = WhisperModel(model_path, device="cpu", compute_type="int8", cpu_threads=4,
+                             local_files_only=True)
+        segments, info = model.transcribe(io.BytesIO(data), beam_size=3, vad_filter=True,
+                                          condition_on_previous_text=False, task="transcribe")
+        if info.duration > 90:
+            raise ValueError("Recording is too long")
+        text = " ".join(segment.text.strip() for segment in segments).strip()
+        if not text or len(text) > 20000:
+            connection.send({"error": "No usable speech was recognized. Record again or type your task."})
+        else:
+            connection.send({"text": text, "language": info.language})
+    except Exception:
+        connection.send({"error": "Local transcription failed. Try a shorter, clearer recording or type your task."})
+    finally:
+        connection.close()
+
+
+class LocalTranscriber:
+    def __init__(self, model_path: Path | None = None):
+        self.model_path = model_path or Path(os.environ.get("GUARD_SPEECH_MODEL", str(DATA_DIR / "models/whisper-small")))
         self._pending: asyncio.Task | None = None
         self._generation = 0
 
     @property
-    def configured(self) -> bool:
-        return bool(self.api_key)
+    def configured(self):
+        return (self.model_path / "model.bin").is_file() and (self.model_path / "tokenizer.json").is_file()
 
     def clear(self):
         self._generation += 1
-        self.api_key = ""
         if self._pending and not self._pending.done():
             self._pending.cancel()
 
-    async def transcribe(self, data: bytes, content_type: str) -> dict:
-        if not self.api_key:
-            raise ValueError("Add your OpenAI Whisper API key in dashboard Settings first")
-        mime, extension = audio_format(content_type)
+    async def transcribe(self, data: bytes, content_type: str):
+        audio_format(content_type)
         if not data or len(data) > MAX_AUDIO_BYTES:
             raise ValueError("Recordings must be between 1 byte and 10 MiB")
+        if not self.configured:
+            raise ValueError("Install the local speech model with: .venv/bin/python scripts/speech_install.py")
         if self._pending and not self._pending.done():
             raise ValueError("A recording is already being transcribed; wait or discard it first")
-        key = self.api_key
         generation = self._generation
-        work = asyncio.create_task(self._request(data, mime, extension, key))
+        work = asyncio.create_task(self._request(data))
         self._pending = work
         try:
-            text = await work
-            # A lock or key change during an upload invalidates its result.
-            if self.api_key != key or self._generation != generation:
-                raise ValueError("Transcription was discarded because the voice session changed")
-            return {"text": text, "provider": "OpenAI", "model": "whisper-1"}
+            result = await work
+            if generation != self._generation:
+                raise ValueError("Transcription was discarded because the vault was locked")
+            return {**result, "provider": "Local", "model": "faster-whisper-small"}
         except asyncio.CancelledError:
-            if not self.api_key or self._generation != generation:
-                raise ValueError("Transcription was discarded because the vault was locked or voice settings changed") from None
+            if generation != self._generation:
+                raise ValueError("Transcription was discarded because the vault was locked") from None
             raise
         finally:
             if self._pending is work:
                 self._pending = None
 
-    @staticmethod
-    async def _request(data: bytes, mime: str, extension: str, key: str) -> str:
+    async def _request(self, data):
+        context = multiprocessing.get_context("spawn")
+        parent, child = context.Pipe(duplex=False)
+        process = context.Process(target=_recognize, args=(data, str(self.model_path), child), daemon=True)
         try:
-            # Fixed provider, generated filename, no proxy, redirects, SDK retries, or audio logs.
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(60, connect=15), follow_redirects=False, trust_env=False
-            ) as client:
-                async with client.stream(
-                    "POST",
-                    WHISPER_ENDPOINT,
-                    headers={"Authorization": "Bearer " + key},
-                    data={"model": "whisper-1", "response_format": "json"},
-                    files={"file": ("recording." + extension, data, mime)},
-                ) as response:
-                    if response.status_code in (401, 403):
-                        raise ValueError("OpenAI rejected the Whisper API key; check dashboard Settings")
-                    if response.status_code == 429:
-                        raise ValueError("Whisper is rate-limited or out of API credit; retry when available")
-                    if response.status_code != 200:
-                        raise ValueError("Whisper could not transcribe this recording; retry or type your task")
-                    result = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        result.extend(chunk)
-                        if len(result) > MAX_TRANSCRIPT_BYTES:
-                            raise ValueError("Whisper returned an oversized transcript")
-            parsed = json.loads(result)
-            text = parsed.get("text") if isinstance(parsed, dict) else None
-            if not isinstance(text, str) or not text.strip():
-                raise ValueError("No speech was recognized; record again or type your task")
-            if len(text) > 20000:
-                raise ValueError("The transcript is too long; record a shorter task")
-            # Intentionally no redaction: the user reviews/edits this local draft before task creation.
-            return text.strip()
-        except httpx.TimeoutException:
-            raise ValueError("Whisper timed out; your task has not started") from None
-        except httpx.HTTPError:
-            raise ValueError("Could not reach OpenAI Whisper; check your connection or type your task") from None
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            raise ValueError("Whisper returned an invalid transcript response") from None
+            process.start()
+            child.close()
+            deadline = time.monotonic() + 120
+            while not parent.poll():
+                if not process.is_alive():
+                    raise ValueError("Local speech process stopped. Retry or type your task.")
+                if time.monotonic() >= deadline:
+                    raise ValueError("Local transcription timed out. Use a shorter recording.")
+                await asyncio.sleep(0.05)
+            result = parent.recv()
+            if result.get("error"):
+                raise ValueError(result["error"])
+            return result
+        finally:
+            parent.close()
+            child.close()
+            if process.pid:
+                await asyncio.to_thread(process.join, 0.5)
+                if process.is_alive():
+                    process.terminate()
+                process.join(timeout=2)
+                process.close()

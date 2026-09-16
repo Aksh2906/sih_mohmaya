@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import {
   Check,
@@ -16,7 +17,7 @@ type Preview = {
   redacted: string;
   width: number;
   height: number;
-  report: unknown;
+  report: { requires_manual_review?: boolean; recovery_reasons?: string[] };
 };
 type Props = {
   task: {
@@ -109,20 +110,20 @@ export function VisualApproval({ task, busy, act }: Props) {
         </span>
         <div>
           <span className="eyebrow">
-            VISUAL CHECKPOINT · BEFORE IMAGE TRANSMISSION
+            {t("SCREENSHOT REVIEW")}
           </span>
-          <h2>{task.pending?.title || "Review the redacted screenshot"}</h2>
+          <h2>{t(task.pending?.title || "Review the redacted screenshot")}</h2>
         </div>
       </div>
       <p>
-        Only the approved redacted image will be sent for model reasoning. Check
-        the whole image and cover any sensitive content the detector missed. The
-        original stays on this device.
+        {t(
+          "Review this screenshot before the task continues. Check the whole image and cover any private information that remains visible. The original stays on this device.",
+        )}
       </p>
       {loading && (
         <div className="visual-loading" role="status">
           <LoaderCircle className="spin" size={22} />
-          Loading the exact image preview…
+          {t("Loading the exact image preview…")}
         </div>
       )}
       {error && (
@@ -132,16 +133,24 @@ export function VisualApproval({ task, busy, act }: Props) {
       )}
       {preview && (
         <>
+          {preview.report.requires_manual_review && (
+            <div className="alert" role="alert">
+              <strong>{t("Automatic privacy checks need your review")}</strong>
+              <p>{t("Some private information may still be visible. Inspect the entire screenshot, add masks wherever needed, and approve only the final preview. Nothing is sent while you review.")}</p>
+              {preview.report.recovery_reasons?.map((reason) => <p key={reason}>{t(reason)}</p>)}
+            </div>
+          )}
           <div className="visual-toolbar">
             <button
               className="button secondary small"
               onClick={() => setOriginal(!original)}
             >
               {original ? <EyeOff size={15} /> : <Eye size={15} />}
-              {original ? "Hide local original" : "Show local original"}
+              {original ? t("Hide local original") : t("Show local original")}
             </button>
             <span>
-              {preview.width} × {preview.height} pixels
+              {preview.width} × {preview.height}
+              {t("pixels")}
             </span>
           </div>
           <div
@@ -150,25 +159,30 @@ export function VisualApproval({ task, busy, act }: Props) {
             {original && (
               <figure>
                 <figcaption>
-                  Original <span>LOCAL ONLY</span>
+                  {t("Original")}
+                  <span>{t("LOCAL ONLY")}</span>
                 </figcaption>
                 <img
                   src={preview.original}
-                  alt="Original browser screenshot, kept on this device"
+                  alt={t("Original browser screenshot, kept on this device")}
                 />
               </figure>
             )}
             <figure>
               <figcaption>
-                Redacted image{" "}
+                {t("Redacted image")}{" "}
                 <span>
-                  {masks.length ? "UNAPPLIED MASKS" : "ACTUAL OUTGOING IMAGE"}
+                  {masks.length
+                    ? t("UNAPPLIED MASKS")
+                    : t("ACTUAL OUTGOING IMAGE")}
                 </span>
               </figcaption>
               <div
                 ref={stage}
                 className={"mask-stage " + (editable ? "editable" : "")}
-                aria-label="Drag over the redacted screenshot to add a privacy mask. Numeric mask controls are below."
+                aria-label={t(
+                  "Drag over the redacted screenshot to add a privacy mask. Numeric mask controls are below.",
+                )}
                 onPointerDown={(event) => {
                   if (!editable || event.button !== 0) return;
                   event.preventDefault();
@@ -213,7 +227,9 @@ export function VisualApproval({ task, busy, act }: Props) {
                       "The redacted preview could not be displayed. Approval is unavailable.",
                     );
                   }}
-                  alt="Redacted browser screenshot that will be sent after approval"
+                  alt={t(
+                    "Redacted screenshot for the next task step",
+                  )}
                 />
                 {[...masks, ...(drag ? [drag] : [])].map((mask, index) => (
                   <span
@@ -232,20 +248,20 @@ export function VisualApproval({ task, busy, act }: Props) {
             </figure>
           </div>
           <p className="mask-help">
-            Drag on the redacted image to cover an area, or use pixel
-            coordinates below. You can add masks; existing privacy masks cannot
-            be removed.
+            {t(
+              "Drag on the redacted image to cover an area, or use pixel coordinates below. You can add masks; existing privacy masks cannot be removed.",
+            )}
           </p>
           <div className="manual-mask-controls">
             {(["x", "y", "width", "height"] as const).map((name) => (
               <label key={name}>
                 {name === "x"
-                  ? "Left (px)"
+                  ? t("Left (px)")
                   : name === "y"
-                    ? "Top (px)"
+                    ? t("Top (px)")
                     : name === "width"
-                      ? "Width (px)"
-                      : "Height (px)"}
+                      ? t("Width (px)")
+                      : t("Height (px)")}
                 <input
                   type="number"
                   min={name === "width" || name === "height" ? 1 : 0}
@@ -268,14 +284,15 @@ export function VisualApproval({ task, busy, act }: Props) {
               onClick={() => add(manual)}
             >
               <Plus size={14} />
-              Add mask
+              {t("Add mask")}
             </button>
           </div>
           {masks.length > 0 && (
             <div className="mask-drafts" role="status">
               <span>
-                {masks.length} additional{" "}
-                {masks.length === 1 ? "mask" : "masks"} ready to apply.
+                {masks.length}
+                {t(" additional")} {masks.length === 1 ? "mask" : "masks"}
+                {t("ready to apply.")}
               </span>
               <button
                 className="button secondary small"
@@ -283,7 +300,7 @@ export function VisualApproval({ task, busy, act }: Props) {
                 onClick={() => setMasks((list) => list.slice(0, -1))}
               >
                 <Trash2 size={14} />
-                Undo last addition
+                {t("Undo last addition")}
               </button>
               <button
                 className="button primary small"
@@ -306,31 +323,33 @@ export function VisualApproval({ task, busy, act }: Props) {
                 }
               >
                 {busy === "masks"
-                  ? "Applying…"
-                  : "Apply masks & reload preview"}
+                  ? t("Applying…")
+                  : t("Apply masks & reload preview")}
               </button>
             </div>
           )}
           <details className="visual-report">
-            <summary>Redaction report</summary>
+            <summary>{t("Redaction report")}</summary>
             <pre className="payload" tabIndex={0}>
               {JSON.stringify(preview.report, null, 2)}
             </pre>
           </details>
           {task.pending?.payload !== undefined && (
             <details className="visual-report">
-              <summary>Outgoing text, destination & request hash</summary>
+              <summary>
+                {t("Outgoing text, destination & request hash")}
+              </summary>
               <p>
-                Review the accompanying text as well as the image. The image
-                data below is represented by the redacted preview above.
+                {t(
+                  "Review the accompanying text as well as the image. The image data below is represented by the redacted preview above.",
+                )}
               </p>
               <pre className="payload" tabIndex={0}>
                 {JSON.stringify(
                   task.pending.payload,
                   (_key, value) =>
-                    typeof value === "string" &&
-                    value.startsWith("data:image/")
-                      ? "[Redacted image displayed above]"
+                    typeof value === "string" && value.startsWith("data:image/")
+                      ? t("[Redacted image displayed above]")
                       : value,
                   2,
                 )}
@@ -340,7 +359,7 @@ export function VisualApproval({ task, busy, act }: Props) {
         </>
       )}
       <div className="approval-actions">
-        <span>Approval is bound to this image and context.</span>
+        <span>{t("Approval is bound to this image and context.")}</span>
         <button
           className="button secondary"
           disabled={!!busy}
@@ -353,7 +372,7 @@ export function VisualApproval({ task, busy, act }: Props) {
             )
           }
         >
-          Deny image send
+          {t("Deny image send")}
         </button>
         <button
           className="button primary"
@@ -376,7 +395,7 @@ export function VisualApproval({ task, busy, act }: Props) {
           }
         >
           <Check size={16} />
-          Approve image & continue
+          {t("Approve image & continue")}
         </button>
       </div>
     </section>
