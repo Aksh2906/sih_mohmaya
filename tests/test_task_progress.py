@@ -224,3 +224,15 @@ def test_proactive_login_detection_requires_an_actual_form():
                              "fields": [{"tag": "input", "label": "Captcha"}]})
     assert not is_login_form({"url": "https://example.test/application", "text": "Application form\nFooter\nLogin",
                              "fields": [{"tag": "input", "label": "Name"}, {"tag": "a", "label": "Login"}]})
+
+
+async def test_early_continue_at_otp_hands_back_without_model_or_input(runtime):
+    runtime.task["_human_resume"] = {"kind": "login", "auto_resume": True}
+    runtime.raw.update(url="https://portal.example/verify", title="Verify your identity", text="Verify your identity",
+                       fields=[{"index": 1, "tag": "input", "autocomplete": "one-time-code", "label": "Code"}])
+    runtime.execute_element = AsyncMock()
+    assert await runtime.handoff_login_if_needed()
+    runtime.execute_element.assert_not_awaited()
+    runtime.llm.send.assert_not_awaited()
+    assert runtime.task["human_action"]["kind"] == "otp"
+    assert runtime.task["human_action"]["auto_resume"] is True

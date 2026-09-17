@@ -1,7 +1,7 @@
-"""Real Chromium UI tests using an isolated HTTP origin, synthetic audio, and mock API.
+"""Real Chromium UI tests using an isolated HTTP origin and mock API.
 
 Run from repository root: .venv/bin/python -m pytest apps/dashboard/tests/test_ui_smoke.py -q
-No real microphone, remote model, or saved user vault is accessed.
+No remote model or saved user vault is accessed.
 """
 
 import base64
@@ -42,7 +42,6 @@ def chromium():
         browser = pw.chromium.launch(
             executable_path=str(executable),
             headless=True,
-            args=["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
         )
         yield browser
         browser.close()
@@ -54,7 +53,7 @@ def dashboard(chromium):
         ("127.0.0.1", 0), partial(QuietHandler, directory=str(ROOT / "apps/dashboard/dist"))
     )
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    context = chromium.new_context(viewport={"width": 1360, "height": 1050}, permissions=["microphone"])
+    context = chromium.new_context(viewport={"width": 1360, "height": 1050})
     context.add_init_script("sessionStorage.setItem('dpg.session', 'test-only-pair-token');")
     page = context.new_page()
     state = {
@@ -80,7 +79,7 @@ def dashboard(chromium):
         path = request.url.split("/api/v1", 1)[1]
         body = None
         if request.method == "POST":
-            body = request.post_data_buffer if path == "/audio/transcribe" else request.post_data_json
+            body = request.post_data_json
             calls.append((path, body))
         if path in custom:
             payload = custom[path](body)
@@ -105,12 +104,6 @@ def dashboard(chromium):
             payload = state["task"]
         elif path.startswith("/tasks/"):
             payload = state["task"]
-        elif path == "/audio/transcribe":
-            payload = {
-                "text": "Fill the fictional application at https://example.test",
-                "provider": "Local",
-                "model": "faster-whisper-small",
-            }
         else:
             payload = {}
         route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
@@ -142,12 +135,13 @@ def test_task_can_start_without_existing_tab(dashboard):
     assert body["review_text"] is False and body["mode"] == "remote"
 
 
-def test_login_handoff_continues_same_task_without_replacing_vault_selection(dashboard):
+@pytest.mark.parametrize("auto_resume", [False, True])
+def test_login_handoff_continues_same_task_without_replacing_vault_selection(dashboard, auto_resume):
     page, url, state, calls, _ = dashboard
     state["task"] = {
         "id": "login-task", "goal": "Open the Download Aadhaar page", "status": "waiting_input",
         "step": 3, "events": [], "result": "Sign in directly in the controlled browser.",
-        "human_action": {"kind": "login", "message": "Sign in", "target_id": "same-tab"},
+        "human_action": {"kind": "login", "message": "Sign in", "target_id": "same-tab", "auto_resume": auto_resume},
         "plan": [{"title": "Open the download service", "success_criteria": "Download heading is visible",
                   "status": "in_progress", "source_ids": [1]}],
         "sources": [{"id": 1, "title": "Official help", "url": "https://example.test/help", "note": "Service route"}],
@@ -155,6 +149,8 @@ def test_login_handoff_continues_same_task_without_replacing_vault_selection(das
     page.goto(url + "/#page=activity&task=login-task")
     expect(page.get_by_role("heading", name="Task plan", exact=True)).to_be_visible()
     expect(page.get_by_text("Your browser action is needed", exact=True)).to_be_visible()
+    if auto_resume:
+        expect(page.get_by_text("The agent will continue automatically", exact=False)).to_be_visible()
     expect(page.get_by_role("button", name="Add details", exact=True)).not_to_be_visible()
     page.get_by_text("Sources consulted", exact=True).click()
     expect(page.get_by_role("link", name="Official help")).to_have_attribute("href", "https://example.test/help")
@@ -164,25 +160,19 @@ def test_login_handoff_continues_same_task_without_replacing_vault_selection(das
     expect(page.get_by_role("dialog")).not_to_be_visible()
 
 
-def test_voice_requires_send_and_only_updates_draft(dashboard):
+def test_typed_draft_requires_explicit_start(dashboard):
     page, url, _, calls, _ = dashboard
     page.goto(url + "/#page=activity&new=1")
     dialog = page.get_by_role("dialog")
-    dialog.get_by_role("button", name="Record task", exact=True).click()
-    dialog.get_by_role("button", name="Stop recording", exact=True).wait_for()
-    # Wait for native MediaRecorder to accumulate a synthetic audio sample.
-    page.wait_for_timeout(300)
-    dialog.get_by_role("button", name="Stop recording", exact=True).click()
-    dialog.get_by_role("button", name="Transcribe locally", exact=True).wait_for()
-    page.wait_for_function("document.querySelector('.voice-input audio')?.readyState >= 1")
-    assert not any(path in ("/audio/transcribe", "/tasks") for path, _ in calls)
-    dialog.get_by_role("button", name="Transcribe locally", exact=True).click()
-    expect(dialog.get_by_role("textbox", name="Task", exact=True)).to_have_value(
-        "Fill the fictional application at https://example.test"
-    )
-    capture(page, "voice-transcript-test-fixture.png")
-    assert sum(path == "/audio/transcribe" for path, _ in calls) == 1
+    draft = "मेरी प्रोफ़ाइल से यह फ़ॉर्म भरें — stop before submitting."
+    dialog.get_by_role("textbox", name="Task", exact=True).fill(draft)
+    expect(dialog.get_by_role("textbox", name="Task", exact=True)).to_have_value(draft)
+    expect(dialog.get_by_role("button", name="Record task", exact=True)).to_have_count(0)
+    expect(page.locator("audio")).to_have_count(0)
     assert not any(path == "/tasks" for path, _ in calls)
+    dialog.get_by_role("button", name="Start task", exact=True).click()
+    page.get_by_text("Task new-task", exact=False).wait_for()
+    assert next(body for path, body in calls if path == "/tasks")["goal"] == draft
 
 
 def png(mask=None):

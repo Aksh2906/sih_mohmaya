@@ -9,7 +9,6 @@ npm --prefix apps/dashboard ci
 npm --prefix apps/dashboard run build
 node --check apps/extension/background.js
 node --check apps/extension/sidepanel.js
-node --check apps/extension/capture.js
 node --check demo/form.js
 node --check demo/portal.js
 ```
@@ -24,15 +23,15 @@ Run from the repository root after building the dashboard:
 GUARD_BROWSER_TESTS=1 .venv/bin/python -m pytest apps/dashboard/tests apps/extension/tests -q
 ```
 
-These five real Chromium checks use a disposable browser profile, a synthetic microphone, and mocked companion API responses. They verify:
+These real Chromium checks use disposable browser profiles and mocked companion API responses. They verify:
 
 - A remote task can start from a URL in its goal without an existing browser tab, with visual checkpoints and stop-before-submission enabled by default.
-- Dashboard audio remains local and playable until **Transcribe with Whisper** is clicked. The response only updates the editable task draft; it does not start a task.
+- Typed English/Hindi task drafts remain editable and start only after an explicit click. No recording controls are present.
 - Screenshot masks use source-image pixel coordinates. Unsaved masks block approval, applied masks refresh the approval ID, and the outgoing text, destination, and request hash are inspectable.
 - The fictional Meridian portal validates its six fields and has a separate review screen before its synthetic submission.
-- Extension voice delivery updates the side-panel draft, restores the original browser tab, and never starts a task automatically. A subsequent explicit start can use a supplied URL.
+- Extension typed task entry works with or without a starting URL, followed by login handoff, action review, and manual screenshot masking.
 
-Set `GUARD_UI_CAPTURE_DIR=/tmp/privacy-guard-ui` to save labelled fixture screenshots. The image previews and transcription in these interface tests are fixtures; this suite does not establish live-provider quality or redaction accuracy. Backend and real-agent transport checks are separate.
+Set `GUARD_UI_CAPTURE_DIR=/tmp/privacy-guard-ui` to save labelled fixture screenshots. The image previews and model responses in these interface tests are fixtures; this suite does not establish live-provider quality or redaction accuracy. Backend and real-agent transport checks are separate.
 
 ## Manual browser verification
 

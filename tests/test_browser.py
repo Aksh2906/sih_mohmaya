@@ -380,47 +380,6 @@ async def test_dropdown_identity_normalization_rejection_and_event_verification(
             await browser.close()
 
 
-@pytest.mark.skipif(os.environ.get("GUARD_BROWSER_TESTS") != "1", reason="Opt-in real Chromium test")
-async def test_uidai_identity_adapter_requires_exact_origin_login_and_unlabelled_control(tmp_path):
-    from playwright.async_api import async_playwright
-
-    from privacy_guard.browser import _OBSERVE_JS
-    from privacy_guard.tasks import TaskManager
-
-    executable = BrowserDriver(DATA_DIR, tmp_path, headless=True)._browser_executable()
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(executable_path=str(executable), headless=True)
-        try:
-            page = await browser.new_page()
-            # Fulfil all requests locally, including the official-looking origin.
-            await page.route("**/*", lambda route: route.fulfill(content_type="text/html", body="<body></body>"))
-            cases = [
-                ("https://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="uid">', "Aadhaar number"),
-                ("https://example.test", "Aadhaar - Login", '<input name="uid">', "uid"),
-                ("https://tathya.uidai.gov.in.example.test", "Aadhaar - Login", '<input name="uid">', "uid"),
-                ("http://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="uid">', "uid"),
-                ("https://tathya.uidai.gov.in", "Aadhaar profile", '<input name="uid">', "uid"),
-                ("https://tathya.uidai.gov.in", "Login", '<input name="uid">', "uid"),
-                ("https://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="uid" aria-label="Address">', "Address"),
-                ("https://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="uid" placeholder="OTP">', "OTP"),
-                ("https://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="uid" type="password">', "uid"),
-                ("https://tathya.uidai.gov.in", "Aadhaar - Login", '<input name="captcha">', "captcha"),
-            ]
-            for origin, title, markup, expected in cases:
-                await page.goto(origin + "/fixture")
-                await page.set_content(f"<title>{title}</title>{markup}")
-                # Production navigation rejects public HTTP. This negative
-                # fixture still needs an observer nonce in an insecure context.
-                if origin.startswith("http:"):
-                    await page.evaluate("() => { crypto.randomUUID = () => 'synthetic-http-nonce'; }")
-                state = await page.evaluate(_OBSERVE_JS)
-                field = state["fields"][0]
-                assert field["label"] == expected, (origin, title, markup)
-                assert TaskManager.compatible(field, {"field_type": "aadhaar"}) == (expected == "Aadhaar number")
-        finally:
-            await browser.close()
-
-
 async def test_stop_during_cursor_motion_prevents_dispatch(tmp_path, monkeypatch):
     from privacy_guard.browser_cursor import CURSOR_MOVE_JS
 

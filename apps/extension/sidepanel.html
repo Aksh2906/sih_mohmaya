@@ -99,18 +99,6 @@
               maxlength="5000"
               required
             ></textarea>
-            <div class="voice-launch">
-              <button id="voice-open" type="button" class="button secondary">
-                Record voice task</button
-              ><small
-                >Record and transcribe locally in English or Hindi. No audio
-                upload.</small
-              >
-            </div>
-            <p id="transcript-note" class="resume-note" role="status" hidden>
-              Transcript added. Edit your task before starting; nothing has
-              started automatically.
-            </p>
             <div class="prompt-chips">
               <button
                 type="button"
@@ -150,7 +138,7 @@
               <label class="check-option"
                 ><input id="vision" type="checkbox" checked /><span
                   >Redacted images at every planning step<small
-                    >Review requests that need attention.</small
+                    >Review only when sensitive information is redacted.</small
                   ></span
                 ></label
               >
@@ -325,8 +313,6 @@
             Open synthetic demo form ↗</button
           ><button id="portal-prepare" class="button secondary full">
             Prepare portal demo in dashboard ↗</button
-          ><button id="voice-settings" class="button secondary full">
-            Local speech settings ↗</button
           ><button id="disconnect" class="button secondary full">
             Disconnect extension</button
           ><small

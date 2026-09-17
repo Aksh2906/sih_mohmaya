@@ -1,4 +1,4 @@
-/* Translate interface copy only. User input, page evidence and transcripts stay untouched. */
+/* Translate interface copy only. User input and page evidence stay untouched. */
 const VeilLocale = {
   language: localStorage.getItem("veil.language") === "hi" ? "hi" : "en",
   dictionary: {},

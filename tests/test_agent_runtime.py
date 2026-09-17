@@ -8,7 +8,6 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -39,14 +38,7 @@ def runtime_stub(tmp_path):
         "_ref_ids": {},
         "_refs": {},
     }
-    runtime = BrowserAgentRuntime(manager, task)
-    # Unit fixtures simulate the approval service; dedicated transport tests
-    # exercise real classifier requests through a mock HTTP peer.
-    async def review(kind, candidate, private, artifact=None):
-        from privacy_guard.image_review import image_review_decision
-        return kind == "action" or bool(artifact and image_review_decision(artifact["mask_report"])["required"])
-    runtime.llm.requires_review = AsyncMock(side_effect=review)
-    return runtime
+    return BrowserAgentRuntime(manager, task)
 
 
 def test_agent_transport_drops_native_images_and_preserves_json(tmp_path):
@@ -236,8 +228,6 @@ async def test_stock_agent_navigation_ref_fill_image_review_missing_resume(tmp_p
 
     def respond(request):
         payload = json.loads(request.content)
-        if payload["messages"][0]["content"].startswith("APPROVAL_CHECK:"):
-            return httpx.Response(200, json={"choices": [{"message": {"content": "true"}}]})
         sent.append(payload)
         assert canary not in json.dumps(payload)
         if empty_first_response and len(sent) == 1:

@@ -25,14 +25,7 @@ def make_runtime(tmp_path):
 
 def transport(monkeypatch, handler):
     original = httpx.AsyncClient
-    def peer(request):
-        # This fixture tests provider failover. Simulate successful approval
-        # checks independently; classifier transport has its own test suite.
-        body = json.loads(request.content)
-        if body["messages"][0]["content"].startswith("APPROVAL_CHECK:"):
-            return httpx.Response(200, json={"choices": [{"message": {"content": "false"}}]})
-        return handler(request)
-    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: original(transport=httpx.MockTransport(peer), **kw))
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: original(transport=httpx.MockTransport(handler), **kw))
 
 
 @pytest.mark.parametrize("review", [False, True])
@@ -233,7 +226,7 @@ async def test_unlock_migrates_legacy_credentials_once(tmp_path, legacy_base, le
             assert gateway.api_key == ("legacy-primary-key" if "openrouter.ai" in legacy_base else "")
             assert gateway.fallback_api_key == expected_fallback
             assert gateway.fallback_model == (legacy_model if expected_fallback else "gemini-2.5-flash")
-            assert not hasattr(app.state.transcriber, "api_key")
+            assert not hasattr(app.state, "transcriber")
             saved = app.state.vault.load_blob("provider_settings", {})
             assert saved["provider_settings_version"] == 2
             assert "legacy-openai-key" not in json.dumps(saved)

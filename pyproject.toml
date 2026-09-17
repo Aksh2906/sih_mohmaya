@@ -15,7 +15,6 @@ dependencies = [
   "pytesseract>=0.3.13,<1",
   "httpx>=0.28,<1",
   "playwright>=1.50,<2",
-  "faster-whisper>=1.2,<2",
 ]
 
 [dependency-groups]

@@ -1,0 +1,14 @@
+{
+  "screen_id": "synthetic-settings-001",
+  "image_path": "sample_screen.png",
+  "image_redacted": true,
+  "width": 640,
+  "height": 360,
+  "bbox_format": "xyxy",
+  "bbox_units": "pixels",
+  "summary": "Synthetic fixture representing decoded ViT context from an already-redacted image: a settings screen with a masked email field and Save button. These labels are hand-authored, not real ViT predictions.",
+  "elements": [
+    {"label": "email input", "bbox": [30, 100, 460, 145], "confidence": null},
+    {"label": "Save button", "bbox": [30, 200, 180, 245], "confidence": null}
+  ]
+}

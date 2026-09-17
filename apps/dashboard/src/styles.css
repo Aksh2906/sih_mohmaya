@@ -2538,54 +2538,17 @@ input[type="checkbox"] {
     transition: none !important;
   }
 }
-/* Visual checkpoints and deliberately separate voice transmission. */
-.voice-input {
-  margin: 12px 0 22px;
-  border: 1px solid #324840;
-  border-radius: 8px;
-  padding: 14px;
-  background: #15242d;
-}
-.voice-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.voice-input audio {
-  display: block;
-  max-width: 100%;
-  width: 100%;
-  height: 36px;
-  margin: 12px 0;
-}
-.voice-disclosure,
-.voice-note {
-  color: #a2b9ad;
-  font-size: 11px;
-  line-height: 1.7;
-  margin: 10px 0 0;
-}
-.voice-note {
-  color: #b4e4cc;
-}
-.voice-state {
-  color: #edbea8;
-  font-size: 11px;
-}
-.recording {
-  border-color: #be8d7c !important;
-}
-.whisper-settings {
+/* Settings sections and visual checkpoints. */
+.settings-section {
   border-top: 1px solid #344a42;
   margin-top: 22px;
   padding-top: 20px;
 }
-.whisper-settings h3 {
+.settings-section h3 {
   font-size: 14px;
   margin-bottom: 8px;
 }
-.whisper-settings p {
+.settings-section p {
   font-size: 11px;
   line-height: 1.75;
   color: #a3b9ae;
@@ -2777,9 +2740,6 @@ input[type="checkbox"] {
   }
   .manual-mask-controls > button {
     width: 100%;
-  }
-  .voice-toolbar .button {
-    flex-grow: 1;
   }
 }
 .portal-preparation {

@@ -218,9 +218,9 @@ function renderTask(task) {
     text(
       "approval-description",
       visual
-        ? "Inspect the screenshot, add masks if needed, and approve the next step. The original stays on this device."
+        ? "Inspect the redacted screenshot here, add masks if needed, and approve its transmission. The original stays on this device."
         : p.kind === "model"
-          ? "Review the prepared context before the task continues. Deny if you see private information."
+          ? "Review what will reach the reasoning model. Deny if you see private information."
           : p.kind === "disclosure"
             ? "The selected references resolve to real values locally. This website may receive them as soon as they are entered."
             : "Check the button and website below. Approval lets the agent perform this action.",
@@ -286,6 +286,12 @@ function renderTask(task) {
   );
   show("resume-information", resumable && !task.human_action);
   show("human-action-note", resumable && !!task.human_action);
+  text(
+    "human-action-note",
+    task.human_action?.auto_resume
+      ? "Complete CAPTCHA and OTP on the website. The agent will continue automatically when login clears. If needed, choose “I've finished — continue”."
+      : "Complete the step on the website, then choose “I've finished — continue”. Enter OTPs and CAPTCHA answers only on the website.",
+  );
   const stages = Array.isArray(task.plan) ? task.plan : [];
   text(
     "task-plan",
@@ -594,38 +600,6 @@ $("missing-documents").addEventListener("click", () =>
 $("portal-prepare").addEventListener("click", () =>
   chrome.tabs.create({ url: DASHBOARD + "#page=activity&new=1" }),
 );
-$("voice-settings").addEventListener("click", () => openDashboard("settings"));
-$("voice-open").addEventListener("click", async () => {
-  try {
-    const [source] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
-    const url = new URL(chrome.runtime.getURL("capture.html"));
-    if (source?.id) url.searchParams.set("source_tab", String(source.id));
-    await chrome.tabs.create({ url: url.href });
-  } catch (e) {
-    error(e.message);
-  }
-});
-chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (
-    sender.id !== chrome.runtime.id ||
-    message.type !== "dpg-transcript" ||
-    typeof message.text !== "string"
-  )
-    return;
-  if (message.text.length > 5000) {
-    respond({
-      error: "Shorten the transcript to 5,000 characters before using it.",
-    });
-    return;
-  }
-  $("goal").value = message.text;
-  show("transcript-note", true);
-  $("goal").focus();
-  respond({ received: true });
-});
 void start().catch((e) => error(e.message));
 
 window.addEventListener("veil:language", () => {

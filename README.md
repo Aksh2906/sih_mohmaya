@@ -2,7 +2,7 @@
 
 A supervised browser agent with a Chrome extension, local dashboard, encrypted profile, document intake, and human-reviewed screenshot sharing. **Browser Use runs the agent locally; a hosted LLM/VLM interprets sanitized context.**
 
-Voice input uses **local multilingual faster-whisper (Whisper small, CPU/int8)**. Model weights download once; recognition runs offline without an API key or audio upload. English and Hindi transcripts remain editable drafts and never start a task automatically.
+Tasks are entered as editable text in English, Hindi, or mixed language. See the [codebase walkthrough](docs/CODEBASE_WALKTHROUGH.md) for a presentation route through the implementation.
 
 Follow the demo below from start to finish. **First-time installation:** [setup.md](setup.md). **Short startup reference:** [startup.md](startup.md). **Technical overview:** [How it works](#how-it-works).
 
@@ -75,11 +75,9 @@ Use these options:
 
 Choose **Start task**. Watch the controlled browser open the portal, navigate and fill available details. Respond to action approvals if requested. The precise sequence depends on the model and page state.
 
-**Voice opening:** setup installs the local multilingual speech model; existing checkouts can run `.venv/bin/python scripts/speech_install.py`. Record in the dashboard or extension, choose **Transcribe locally**, edit the text, and start the task explicitly. No recording is uploaded to a speech provider.
-
 ### 5. Demonstrate screenshot redaction and human approval
 
-Each visual planning turn uses a fresh redacted screenshot together with sanitized text and DOM indices. Routine requests proceed automatically after a safety check. Requests needing attention open review in the extension or dashboard; **Review every image instead** is an optional stricter setting.
+Each visual planning turn sends a fresh redacted screenshot together with sanitized text and DOM indices. Routine screenshots proceed automatically. Detected sensitive redactions require image review in the extension or dashboard; **Review every image instead** is an optional stricter setting.
 
 In dashboard review:
 
@@ -150,7 +148,7 @@ Press **Ctrl+C** in Terminal when finished using the app. On restart, use the ne
 | Screenshot checks are incomplete | After three capture attempts, review and mask the local preview. If image coordinates are invalid, let the page settle, reset zoom, then choose **I've finished — continue**. |
 | Pairing or connection error | Keep the companion terminal open and use its current pairing code. |
 
-For the presentation, describe the visual filter as **DOM-based masking with human review**. Local ViT/CV and automatic face detection are not implemented. The selected values reach the destination website when filled; speech recognition runs locally. Live model performance depends on the configured provider; the demo is supervised.
+For the presentation, describe the visual filter as **DOM-based masking with human review**. Local ViT/CV and automatic face detection are not implemented. The selected values reach the destination website when filled. Live model performance depends on the configured provider; the demo is supervised.
 
 ## What version 0.2 adds
 
@@ -158,7 +156,6 @@ For the presentation, describe the visual filter as **DOM-based masking with hum
 - **Selective screenshot masking:** local DOM geometry, known values and text patterns locate sensitive regions. Filled controls and uncertain media are covered with opaque pixels. Useful labels and layout remain visible where possible.
 - **Screenshot review:** compare the original locally with the exact redacted outgoing image, add masks, and approve or deny. Edits replace the approval ID and request hash. Unapproved native screenshots are excluded from model calls.
 - **Missing-information round trip:** request an approved visual interpretation, pause for documents or facts, then resume in the same browser tab with newly confirmed records.
-- **Whisper dictation:** record, transcribe, edit, then explicitly start a task. Available from the dashboard and extension.
 - **A fictional application portal:** a multi-step demonstration separate from the original deterministic form fixture.
 
 This version intentionally **does not run a local ViT, browser CV model, or automatic face detector**. Its screenshot filter uses DOM signals, patterns and human corrections. It demonstrates part of the SIH problem statement; it does not establish complete compliance or universal PII detection.
@@ -167,9 +164,7 @@ This version intentionally **does not run a local ViT, browser CV model, or auto
 
 ```mermaid
 flowchart TD
-    Voice[Recorded voice] -->|Local audio, explicit Transcribe| Whisper[Local multilingual Whisper]
-    Whisper --> Draft[Editable local task draft]
-    Typed[Typed instruction] --> Draft
+    Typed[Typed instruction] --> Draft[Editable local task draft]
     Draft -->|Start task| Agent[Local Browser Use agent]
     Docs[Local documents and profile] --> Review[Extraction review]
     Review --> Vault[Encrypted vault and private references]
@@ -188,13 +183,13 @@ The extension and dashboard control an authenticated local Python companion. The
 
 The planner receives opaque references such as `ref_a1b2c3d4`, their labels and types. A custom `input_ref` tool resolves a reference immediately before filling the intended field. The resolved value is not placed in the model's action object or ordinary task events. **The destination website receives entered values**, potentially before submission.
 
-For remote tasks, visual planning is on by default. Every planning turn and completion check captures a fresh screenshot. Image review is required when the safety check flags the prepared context, fails, or when **Review every image instead** is enabled. Incomplete privacy scans and recovery checkpoints also require review. A task can explicitly disable vision for sanitized text-only planning. Step/call budgets remain bounded. Final submission is withheld by the default task policy.
+For remote tasks, visual planning is on by default. Every planning turn and completion check captures a fresh screenshot. Image review is required when sensitive information is redacted, or when **Review every image instead** is enabled. A task can explicitly disable vision for sanitized text-only planning. Step/call budgets remain bounded. Final submission is withheld by the default task policy.
 
 ## Interfaces
 
 | Surface | Purpose |
 |---|---|
-| Chrome extension | Enter a URL and task, dictate a draft, select reviewed information, monitor progress, pause/resume/stop, and open screenshot review. |
+| Chrome extension | Enter a URL and typed task, select reviewed information, monitor progress, pause/resume/stop, and open screenshot review. |
 | Local dashboard | Manage the vault, review document facts, configure API keys, inspect outgoing requests and compare/redact screenshots. |
 | Controlled Chromium | Runs the actual website task with a separate browser profile. |
 | Fictional portal | Demonstrates navigation, partial profile filling, missing information and completion for review. No real tax filing. |
@@ -212,8 +207,7 @@ For remote tasks, visual planning is on by default. Every planning turn and comp
 - Screenshot originals are transient local preview data. The model receives an immutable, verified masked PNG only through the reviewed image path. Manual masks are additive; changing an image requires a new approval.
 - Page text, goals, tool results and model history pass through known-value/pattern sanitization. Unknown or unusual PII may be missed. Inspect context and mask uncertain regions before sharing sensitive pages.
 - Browser Use cloud synchronization, telemetry, unguarded model fallbacks and raw screenshot/history persistence are disabled in the agent integration.
-- **Audio stays local:** recognition runs in a cancellable local Python process using installed model files. Recordings and transcripts are not automatically saved to the vault. Review the transcript before starting the task.
-- Provider keys stay in the companion and encrypted vault, not frontend bundles or extension storage. Local speech needs no key. Old Whisper credentials are removed on unlock.
+- Provider keys stay in the companion and encrypted vault, not frontend bundles or extension storage.
 - Pairing authenticates each interface. The extension cannot read vault records directly. A paired, unlocked extension can retrieve pending local screenshot previews, add masks and approve the current image request.
 - Vault lock cancels active work and clears credentials and image artifacts. Restarted tasks remain stopped; no pending browser action is automatically replayed.
 
@@ -223,7 +217,7 @@ Ordinary Chromium cookies/cache, the destination website and operating-system ba
 
 ```text
 apps/dashboard/        React + TypeScript dashboard and review UI
-apps/extension/        Chrome MV3 extension and recording surface
+apps/extension/        Chrome MV3 task and review side panel
 privacy_guard/
   api.py               Authenticated loopback API and local UI hosting
   tasks.py             Task lifecycle, approvals and reviewed record catalog
@@ -233,13 +227,14 @@ privacy_guard/
   privacy.py           Known-value and pattern text filtering
   privacy_geometry.py  Local DOM regions for masking
   screenshots.py       Immutable masked images and geometry validation
-  audio.py             Bounded, cancellable local multilingual speech recognition
   vault.py             Encrypted local records and documents
   documents.py         Local extraction, review and decimal calculations
   gateway.py           Legacy deterministic demo model gateway
 demo/                  Fictional portal, original form and synthetic documents
 tests/                 Privacy, transport, lifecycle and browser checks
 scripts/               Setup, start and verification commands
+standalone_data_curation/ Offline synthetic generation and labeled screenshot curation
+docs/CODEBASE_WALKTHROUGH.md Guided source tour and presentation notes
 startup.md             Daily startup, extension and portal demo instructions
 ```
 
@@ -264,11 +259,11 @@ One user, one active task and one controlled Chromium tab. A URL is optional in 
 
 Remote mode reads locally verified field indices instead of forwarding Browser Use's native DOM text. Uninspectable frames are omitted from text context and masked in screenshots, so an unrelated iframe no longer blocks the whole page. Forms inside cross-origin frames, closed shadow DOM, login/CAPTCHA, some custom widgets, arbitrary file submission and complex tax calculations still need manual handling. Observations remain bounded to 12,000 DOM elements and 2,000 controls; rapidly changing pages can require fresh observations.
 
-For browsing, start with a plain-language task such as “Find wireless headphones on Amazon, compare three options, and show me the best match.” Leave the starting website and tab empty in Remote mode. The controlled browser opens a search homepage; the guarded agent chooses a public search query or a relevant HTTPS homepage, reads the results, and continues on the chosen site. The raw task is never automatically inserted into a search URL. The `search_web` tool discovers sites, and `search_text` enters public queries into input or textarea search boxes. Personal form values still use selected, reviewed records. Search/Next/Continue controls can proceed through the existing click review; final purchases and form submissions remain withheld by default. These capabilities are verified with synthetic Chromium fixtures, not a claim of universal Amazon or ITR portal compatibility. Firefox, browser-local CV, local speech inference and signed installers are future work.
+For browsing, start with a plain-language task such as “Find wireless headphones on Amazon, compare three options, and show me the best match.” Leave the starting website and tab empty in Remote mode. The agent asks the model for a relevant public HTTPS homepage, validates that destination, then opens it in the controlled browser. Subsequent navigation uses supported links and actions; `search_text` enters public queries into observed input or textarea search boxes. The raw task is never automatically inserted into a search URL. Personal form values still use selected, reviewed records. Search/Next/Continue controls can proceed through the existing click review; final purchases and form submissions remain withheld by default. These capabilities are verified with synthetic Chromium fixtures, not a claim of universal Amazon or ITR portal compatibility. Firefox, browser-local CV and signed installers are future work.
 
 A blue **Agent** cursor moves to visible controls before clicks, field entry and dropdown selection, and toward the page before scrolling. It is an on-page visual indicator, not the system mouse pointer. The overlay does not intercept clicks, become part of model observations, or replace the atomic action checks. Stop and page-change validation are checked after movement and before dispatch. In the extension, enable **Use the current tab instead of finding a website** for tasks about the page already open; otherwise Remote mode discovers a site. Restart the companion and reload the unpacked extension after updating.
 
-The project reuses the MIT-licensed [Browser Use repository](https://github.com/browser-use/browser-use); its navigation and reasoning loop are upstream capabilities. The contribution here is the supervision, privacy gateway, local facts and document workflow. The local speech integration uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
+The project reuses the MIT-licensed [Browser Use repository](https://github.com/browser-use/browser-use); its navigation and reasoning loop are upstream capabilities. The contribution here is the supervision, privacy gateway, local facts and document workflow.
 
 The [original implementation plan](IMPLEMENTATION_PLAN.md) is historical. The [v0.2 implementation record](docs/IMPLEMENTATION_V0_2.md) describes the revised scope.
 
@@ -322,10 +317,21 @@ search engines and official help pages, record sources and return to previously
 visited task pages. Private values remain prohibited in public search queries.
 
 Login, OTP, CAPTCHA and other required manual actions use a resumable browser
-handoff. Complete the step on the website and choose **I've finished — continue**
-in the dashboard or extension. The same task, target tab, selected records and
-plan are retained; a fresh observation verifies what changed. Authentication
-secrets are entered on the website, not in chat or the vault.
+handoff. On the Aadhaar login page, the agent fills the uniquely matching reviewed
+Aadhaar record selected for the task, then waits while you enter CAPTCHA, request
+the OTP, and verify it on the website. It does not press the login or OTP buttons.
+Associated labels, placeholders, and unambiguous visible floating Aadhaar labels
+are supported. Missing or multiple matching records leave the field for you to fill.
+Login handoffs are checked locally every two seconds, without model requests or
+screenshots. After two stable observations with no login form or authentication
+challenge, the same task continues and verifies the new page. The target tab,
+selected records and plan are retained.
+
+If automatic continuation cannot detect completion (for example, a redirect to a
+new website or an inaccessible frame), choose **I've finished — continue** in the
+dashboard or extension. Other manual handoffs also use this button. Pause, stop,
+vault lock, or starting another task cancels login monitoring. Enter OTPs and
+CAPTCHA answers only on the website; store reusable identity details in the vault.
 
 Before successful completion, a separate guarded model request checks fresh page
 evidence against the original goal. Login pages and unfinished stages do not count
@@ -357,14 +363,7 @@ After updating, restart the backend and start a fresh task for an already-ended
 - English/Hindi interface selection is available in both the dashboard and extension; typed and spoken input can use either language. The selected language is passed to the main agent.
 - Short prompts become a visible structured brief with the original request, planning stages, missing-information policy, human handoffs and completion evidence. Expansion uses a local template, without inventing facts or making an extra provider request. The original goal remains the completion check's authority.
 - Visible login forms run a local fill-first check before model planning. Clearly and uniquely matched selected vault references are filled before requesting human help, including when a model calls the handoff “manual”. Field type aliases such as `Aadhaar Number` are normalized; Aadhaar values still require Aadhaar fields. Existing values are preserved. Password records have an explicit type, and OTP/CAPTCHA controls (including `one-time-code` fields) remain manual. The handoff reports filled fields and missing or ambiguous matches. Select your reviewed Aadhaar record when starting or resuming the task.
-- UIDAI's unlabelled `name="uid"` input is recognized as Aadhaar only on the HTTPS `tathya.uidai.gov.in` document with an Aadhaar login title. Explicit field labels take precedence; a generic `uid` on other sites does not receive identity data. This fills the saved number before human login handoff and does not submit CAPTCHA or OTP.
-- Visual planning is on by default. Each action-planning call and final completion check captures a fresh redacted image together with DOM/text context. Safety checks decide whether the prepared context needs approval; safe requests proceed automatically. Before the browser opens, website selection has no page screenshot and uses sanitized text.
+- Visual planning is on by default. Each action-planning call and final completion check captures a fresh redacted image together with DOM/text context. Routine images proceed automatically; sensitive redactions require approval. Before the browser opens, website selection has no page screenshot and uses sanitized text.
 - The extension can show the local original and actual outgoing redacted image, draw additional masks, and approve the current image. New masks replace the approval ID. Approval is disabled while viewing the original, loading a preview or leaving a mask unapplied.
 
 After updating, restart the companion, refresh the dashboard, and reload the unpacked extension in the controlled browser. Choose a language and start a fresh Remote task with visual planning enabled. This does not add file-download support: a download button alone is not proof of a saved file, and unsupported steps remain resumable human handoffs.
-
-### Approval checks
-
-Approval checks use separate calls to the same active model, endpoint and key already configured for the main agent (OpenRouter by default). The checker receives locally sanitized text and, for image requests, the validated redacted PNG. It returns only `true` (human review required) or `false` (proceed). Routine button clicks include the original task, page context, control, destination and submit metadata. Classification timeouts, HTTP errors, malformed answers and changed context require review. No separate classifier model, key or provider is configured; a check does not switch providers on failure.
-
-The configured remote provider receives the sanitized candidate for this check **before** any resulting human review. Raw screenshots and vault credentials are not supplied to the checker. Automatic redaction is not a guarantee that all unknown personal content has been detected. Choose **Review every image instead** or text review to review those requests before remote transmission. Incomplete scans and stalled-planning screenshots skip remote classification and require manual review. Existing final-submission, destructive-action, destination and CAPTCHA/OTP controls remain enforced. Checks add one bounded model request per eligible decision and are counted separately from task reasoning calls.

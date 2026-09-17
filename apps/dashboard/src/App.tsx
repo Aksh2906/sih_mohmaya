@@ -49,7 +49,6 @@ import {
   Terminal,
 } from "lucide-react";
 import { api, getToken, post, remove, setToken } from "./api";
-import { VoiceInput } from "./VoiceInput";
 import { VisualApproval } from "./VisualApproval";
 type Page = "overview" | "vault" | "documents" | "activity" | "settings";
 type Task = {
@@ -69,7 +68,7 @@ type Task = {
   request?: unknown;
   error?: string;
   result?: unknown;
-  human_action?: { kind: string; message: string; target_id?: string } | null;
+  human_action?: { kind: string; message: string; target_id?: string; auto_resume?: boolean } | null;
   plan?: Array<{
     title: string;
     success_criteria: string;
@@ -1881,7 +1880,7 @@ function Approval({ task, busy, act }: { task: Task; busy: string; act: any }) {
       <p>
         {p.kind === "model"
           ? t(
-              "Inspect the prepared payload before the task continues. If you spot private information, deny the request.",
+              "Inspect the prepared payload below before it is sent for reasoning. If you spot private information, deny the request.",
             )
           : p.kind === "disclosure"
             ? t(
@@ -2078,7 +2077,9 @@ function ActivityPage({
               <KeyRound size={17} />
               <span>
                 {t(
-                  "Complete the requested step in the controlled browser, then choose “I've finished — continue”. The agent will check the page and resume this task. Enter passwords, OTPs and CAPTCHA answers only on the website.",
+                  task.human_action.auto_resume
+                    ? "Complete CAPTCHA and OTP in the controlled browser. The agent will continue automatically when login clears. If needed, choose “I've finished — continue”."
+                    : "Complete the requested step in the controlled browser, then choose “I've finished — continue”. The agent will check the page and resume this task. Enter passwords, OTPs and CAPTCHA answers only on the website.",
                 )}
               </span>
             </div>
@@ -2409,7 +2410,7 @@ function ApiKeyPool({
         {t("Add another key")}
       </button>
       <small className="settings-note">
-        {stored}
+        {stored}{" "}
         {t(
           "saved keys. Leave all rows blank to keep them. Entering keys replaces the saved pool when you save. Up to 10 keys.",
         )}
@@ -2442,7 +2443,6 @@ function Settings({
     [fallbackModel, setFallbackModel] = useState("gemini-2.5-flash"),
     [fallbackConfigured, setFallbackConfigured] = useState(false),
     [removeFallback, setRemoveFallback] = useState(false),
-    [speechReady, setSpeechReady] = useState(false),
     [base, setBase] = useState("https://openrouter.ai/api/v1"),
     [tabs, setTabs] = useState<any[]>([]);
   useEffect(() => {
@@ -2451,7 +2451,6 @@ function Settings({
         setMode(r.mode || "remote");
         setModel(r.model || "google/gemini-2.5-flash");
         setBase(r.base_url || "https://openrouter.ai/api/v1");
-        setSpeechReady(!!r.speech_ready);
         setFallbackModel(r.fallback_model || "gemini-2.5-flash");
         setFallbackConfigured(!!r.fallback_configured);
         setKeyCount(r.key_count || 0);
@@ -2673,16 +2672,16 @@ function Settings({
                 )}
                 <small className="settings-note">
                   {t(
-                    "Keys are encrypted locally. Remote mode sends sanitized context to your configured provider for safety checks and task reasoning. You review requests that need attention.",
+                    "Keys are encrypted by the local companion. Redacted images at every planning step require image review before transmission; text review is optional.",
                   )}
                 </small>
               </>
             )}
-            <div className="whisper-settings">
+            <div className="settings-section">
               <h3>{t("Optional fallback · Gemini")}</h3>
               <p>
                 {t(
-                  "OpenRouter keys are tried in order. If they fail, the agent switches to the Gemini key pool. The working key is kept for the task. Requests are checked again when the provider changes.",
+                  "OpenRouter keys are tried in order. If they fail, the agent switches to the Gemini key pool. The working key is kept for the task. Screenshot requests require fresh approval for Gemini.",
                 )}
               </p>
               <label>
@@ -2713,7 +2712,6 @@ function Settings({
                   : fallbackConfigured
                     ? t("Gemini fallback configured locally.")
                     : t("Gemini fallback is not configured.")}{" "}
-                {t("Speech recognition runs locally without a key.")}
               </small>
               {fallbackConfigured && (
                 <button
@@ -2728,22 +2726,6 @@ function Settings({
                 </button>
               )}
             </div>
-            <div className="whisper-settings">
-              <h3>{t("Voice transcription · Local Whisper")}</h3>
-              <p>
-                {t(
-                  "English and Hindi recordings are transcribed on this machine. No API key or audio upload is needed. Review the transcript before starting a task.",
-                )}
-              </p>
-              <small className="settings-note">
-                {speechReady
-                  ? t("Local multilingual speech model is ready.")
-                  : t("Install the local speech model, then refresh Settings.")}
-              </small>
-              {!speechReady && (
-                <code>{t(".venv/bin/python scripts/speech_install.py")}</code>
-              )}
-            </div>
             <Button
               type="submit"
               className="secondary"
@@ -2753,7 +2735,7 @@ function Settings({
               {t("Save settings")}
             </Button>
           </form>
-          <div className="whisper-settings">
+          <div className="settings-section">
             <h3>{t("Demo readiness check")}</h3>
             <p>
               {t(
@@ -2946,7 +2928,6 @@ function NewTask({
             maxLength={5000}
           />
         </label>
-        <VoiceInput onTranscript={setGoal} />
         <div className="portal-preparation">
           <button
             type="button"
@@ -3080,7 +3061,7 @@ function NewTask({
                 {t("Redacted images at every planning step")}
                 <small>
                   {t(
-                    "Screenshots and page text travel together. You review requests that need attention.",
+                    "Screenshots and page text travel together. Only sensitive redactions require image review.",
                   )}
                 </small>
               </span>

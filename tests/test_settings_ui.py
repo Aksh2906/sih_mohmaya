@@ -15,7 +15,7 @@ def test_key_pool_settings_save_preserve_and_preflight(tmp_path):
 
     saved = {"mode": "remote", "model": "google/gemini-2.5-flash", "base_url": "https://openrouter.ai/api/v1",
              "fallback_model": "gemini-2.5-flash", "key_count": 1, "fallback_key_count": 1,
-             "configured": True, "fallback_configured": True, "whisper_configured": False}
+             "configured": True, "fallback_configured": True}
     posts = []
 
     def route_request(route):

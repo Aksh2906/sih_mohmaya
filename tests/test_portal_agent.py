@@ -55,8 +55,6 @@ async def test_shipped_portal_api_document_image_review_and_resume(tmp_path, mon
     def fake_hosted_model(request):
         """Use native Browser Use indices, never dispatch page actions directly."""
         payload = json.loads(request.content)
-        if payload["messages"][0]["content"].startswith("APPROVAL_CHECK:"):
-            return httpx.Response(200, json={"choices": [{"message": {"content": "true"}}]})
         requests.append(payload)
         assert all(value not in json.dumps(payload) for _kind, value in expected.values())
         runtime = next(iter(manager.tasks.values()))["_runtime"]

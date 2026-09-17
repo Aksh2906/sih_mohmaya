@@ -1,4 +1,4 @@
-"""Chrome extension UI smoke test. Synthetic microphone; all companion API calls mocked.
+"""Chrome extension UI smoke test. Typed task entry; all companion API calls mocked.
 Run: .venv/bin/python -m pytest apps/extension/tests/test_extension_smoke.py -q
 """
 
@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.mark.parametrize("start_url", ["https://example.test/application", None])
-def test_extension_voice_delivery_preserves_original_tab(tmp_path, start_url):
+def test_extension_typed_task_and_review(tmp_path, start_url):
     from privacy_guard.browser import BrowserDriver
     from privacy_guard.config import DATA_DIR
 
@@ -54,12 +54,6 @@ def test_extension_voice_delivery_preserves_original_tab(tmp_path, start_url):
             payload = {"records": []}
         elif path == "/browser/tabs":
             payload = {"tabs": []}
-        elif path == "/audio/transcribe":
-            payload = {
-                "text": "Fill this form using my selected profile.",
-                "provider": "Local",
-                "model": "faster-whisper-small",
-            }
         elif path == "/tasks/ui-task/image-preview":
             payload = preview
         elif path == "/tasks/ui-task/masks":
@@ -93,8 +87,6 @@ def test_extension_voice_delivery_preserves_original_tab(tmp_path, start_url):
             args=[
                 f"--disable-extensions-except={ROOT / 'apps/extension'}",
                 f"--load-extension={ROOT / 'apps/extension'}",
-                "--use-fake-device-for-media-stream",
-                "--use-fake-ui-for-media-stream",
             ],
         )
         try:
@@ -105,11 +97,6 @@ def test_extension_voice_delivery_preserves_original_tab(tmp_path, start_url):
                 else context.wait_for_event("serviceworker")
             )
             extension_id = worker.url.split("/")[2]
-            source = context.new_page()
-            source.set_content("<title>Original fictional form</title><h1>Original fictional form</h1>")
-            source_tab = worker.evaluate(
-                "async () => (await chrome.tabs.query({})).find(t => t.title === 'Original fictional form').id"
-            )
             panel = context.new_page()
             panel.goto(f"chrome-extension://{extension_id}/sidepanel.html")
             panel.get_by_label("Terminal pairing code").fill("test-only-code")
@@ -118,36 +105,14 @@ def test_extension_voice_delivery_preserves_original_tab(tmp_path, start_url):
             expect(panel.locator("#mode")).to_have_value("remote")
             expect(panel.locator("#vision")).to_be_checked()
             expect(panel.locator("#stop-before-submit")).to_be_checked()
-            capture = context.new_page()
-            capture.goto(f"chrome-extension://{extension_id}/capture.html?source_tab={source_tab}")
-            capture.get_by_role("button", name="Start recording", exact=True).click()
-            capture.get_by_role("button", name="Stop recording", exact=True).wait_for()
-            capture.wait_for_timeout(300)
-            capture.get_by_role("button", name="Stop recording", exact=True).click()
-            expect(capture.get_by_role("button", name="Transcribe locally", exact=True)).to_be_enabled()
-            expect(capture.locator("#recording-playback")).not_to_have_js_property("readyState", 0)
-            assert not any(path == "/audio/transcribe" for path, _ in calls)
-            capture.get_by_role("button", name="Transcribe locally", exact=True).click()
-            expect(capture.get_by_role("textbox", name="Editable transcript")).to_have_value(
-                "Fill this form using my selected profile."
-            )
-            assert not any(path == "/tasks" for path, _ in calls)
-            capture.get_by_role("button", name="Use transcript in task", exact=True).click()
+            expect(panel.locator("#voice-open")).to_have_count(0)
+            expect(panel.locator("audio")).to_have_count(0)
+            panel.locator("#goal").fill("Fill this form using my selected profile.")
             expect(panel.locator("#goal")).to_have_value("Fill this form using my selected profile.")
-            # Delivery is acknowledged before restoring the source tab, without auto-starting.
-            capture.get_by_text("Transcript placed in the side panel task draft.", exact=False).wait_for()
-            active = worker.evaluate(
-                "async () => (await chrome.tabs.query({active:true,currentWindow:true}))[0].id"
-            )
-            assert active == source_tab
             assert not any(path == "/tasks" for path, _ in calls)
-            assert sum(path == "/audio/transcribe" for path, _ in calls) == 1
             folder = os.getenv("GUARD_UI_CAPTURE_DIR")
             if folder:
                 Path(folder).mkdir(parents=True, exist_ok=True)
-                capture.screenshot(
-                    path=str(Path(folder) / "extension-transcript-test-fixture.png"), full_page=True
-                )
                 panel.screenshot(path=str(Path(folder) / "extension-task-test-fixture.png"), full_page=True)
             panel.bring_to_front()
             expect(panel.locator("#use-current-tab")).not_to_be_checked()
@@ -161,6 +126,7 @@ def test_extension_voice_delivery_preserves_original_tab(tmp_path, start_url):
             else:
                 assert "start_url" not in request
             assert "target_id" not in request
+            assert request["goal"] == "Fill this form using my selected profile."
             assert request["vision"] is True and request["stop_before_submit"] is True
             assert request["image_review"] == "sensitive"
             state["task"].update(

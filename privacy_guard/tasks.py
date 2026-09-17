@@ -15,6 +15,7 @@ from .gateway import ModelGateway, digest, normalize
 from .models import TaskRequest
 from .privacy import sanitize_observation, sanitize_text
 from .task_brief import build_task_brief
+from .task_progress import authentication_barrier, is_login_form
 
 
 def now():
@@ -34,6 +35,8 @@ class TaskManager:
         self.demo_port, self.app_port = demo_port, app_port
         self.tasks: dict[str, dict] = {}
         self.workers: dict[str, asyncio.Task] = {}
+        self.login_watchers: dict[str, asyncio.Task] = {}
+        self.login_poll_seconds = 2
         self.approvals: dict[str, asyncio.Future] = {}
         self.generation = 0
         self.max_steps = 20
@@ -148,10 +151,69 @@ class TaskManager:
         return self.public(task)
 
     def launch(self, task):
+        # A newly active task owns the browser; an older handoff cannot resume it.
+        for watcher in self.login_watchers.values():
+            watcher.cancel()
+        self.login_watchers.clear()
         self.generation += 1
         generation = self.generation
         task["_generation"] = generation
         self.workers[task["id"]] = asyncio.create_task(self.run(task, generation))
+
+    async def cancel_login_watch(self, task_id):
+        watcher = self.login_watchers.pop(task_id, None)
+        if watcher and watcher is not asyncio.current_task():
+            watcher.cancel()
+            try:
+                await watcher
+            except asyncio.CancelledError:
+                pass
+
+    async def watch_login(self, task, generation):
+        """Observe locally while the human signs in; never click or call a model."""
+        previous = None
+        try:
+            while task["status"] == "waiting_input" and (task.get("human_action") or {}).get("auto_resume"):
+                await asyncio.sleep(self.login_poll_seconds)
+                self.check(task, generation)
+                try:
+                    tabs = await self.browser.tabs()
+                    tab = next((t for t in tabs if t["target_id"] == task["target_id"]), None)
+                    if not tab:
+                        return
+                    # Cross-site redirects still use the normal destination approval
+                    # when the user chooses Continue. Do not inspect them here.
+                    allowed = task.get("_allowed_origins", [task["_origin"]])
+                    if origin(tab["url"]) not in allowed:
+                        previous = None
+                        continue
+                    raw = await self.browser.observe(task["target_id"], include_screenshot=False)
+                    self.check(task, generation)
+                    if (origin(raw["url"]) not in allowed or raw.get("truncated_fields")
+                            or raw.get("unsupported_frames") or raw.get("unsupported_components")
+                            or raw.get("ready_state", "complete") != "complete"
+                            or not raw.get("text", "").strip()
+                            or is_login_form(raw) or authentication_barrier(raw)):
+                        previous = None
+                        continue
+                    # Require two stable observations, ignoring entered private values.
+                    current = digest({"url": raw["url"], "title": raw.get("title"), "text": raw["text"],
+                                      "fields": [(f.get("tag"), f.get("label")) for f in raw.get("fields", [])]})
+                except (BrowserError, ValueError):
+                    previous = None
+                    continue
+                if current == previous:
+                    worker = self.workers.get(task["id"])
+                    if worker and not worker.done():
+                        continue
+                    await self.control(task["id"], "resume", automatic=True)
+                    return
+                previous = current
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if self.login_watchers.get(task["id"]) is asyncio.current_task():
+                self.login_watchers.pop(task["id"], None)
 
     def check(self, task, generation):
         if generation != self.generation or not self.vault.unlocked:
@@ -252,7 +314,7 @@ class TaskManager:
         future.set_result(approved)
         return self.public(task)
 
-    async def control(self, task_id, action, record_ids=None):
+    async def control(self, task_id, action, record_ids=None, *, automatic=False):
         task = self.tasks[task_id]
         if task["status"] in ("completed", "stopped", "failed", "blocked", "outcome_unknown"):
             if action == "stop":
@@ -273,16 +335,25 @@ class TaskManager:
                     raise ValueError("Some selected records are no longer available")
                 task["_record_ids"] = list(record_ids)
             human_action = task.get("human_action")
+            await self.cancel_login_watch(task_id)
             if human_action:
                 task["_human_resume"] = {
                     "kind": human_action["kind"],
-                    "instruction": "The user reports completing the browser step. Observe fresh state to verify it and continue the original goal. If the challenge remains, hand back to the user.",
+                    "auto_resume": human_action.get("auto_resume", False),
+                    "instruction": (
+                        "The login form and authentication challenges are no longer visible. Observe fresh state to verify login and continue the original goal. If a challenge remains, hand back to the user."
+                        if automatic else
+                        "The user reports completing the browser step. Observe fresh state to verify it and continue the original goal. If the challenge remains, hand back to the user."
+                    ),
                 }
                 task["human_action"] = None
+            if automatic:
+                self.event(task, "Login form cleared. Checking the page and continuing the original task.")
             task["result"] = None
             task["status"] = "observing"
             self.launch(task)
             return self.public(task)
+        await self.cancel_login_watch(task_id)
         worker = self.workers.get(task_id)
         if not worker or worker.done():
             task["status"] = "paused" if action == "pause" else "stopped"
@@ -313,6 +384,8 @@ class TaskManager:
         return self.public(task)
 
     async def stop_all(self):
+        for identifier in list(self.login_watchers):
+            await self.cancel_login_watch(identifier)
         for task in list(self.tasks.values()):
             if task["id"] in self.workers and not self.workers[task["id"]].done():
                 await self.control(task["id"], "pause")
@@ -393,6 +466,8 @@ class TaskManager:
                 if runtime is None:
                     runtime = task["_runtime"] = BrowserAgentRuntime(self, task)
                 await runtime.run(generation)
+                if task["status"] == "waiting_input" and (task.get("human_action") or {}).get("auto_resume"):
+                    self.login_watchers[task["id"]] = asyncio.create_task(self.watch_login(task, generation))
                 return
             while task["step"] < self.max_steps:
                 self.check(task, generation)

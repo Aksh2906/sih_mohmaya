@@ -214,9 +214,6 @@ async def test_native_model_timeout_and_unknown_reference_stop_before_execution(
     requests = []
 
     def handle(request):
-        body = json.loads(request.content)
-        if body["messages"][0]["content"].startswith("APPROVAL_CHECK:"):
-            return response_for("false")
         requests.append(request)
         if failure == "timeout":
             raise httpx.ReadTimeout("Synthetic provider timeout", request=request)

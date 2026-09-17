@@ -1,6 +1,6 @@
 # Set up Dev Privacy Guard v0.2
 
-This checkout targets the existing Apple M1 Mac with macOS 15 and 8 GB RAM. The dashboard, vault, document processing and Browser Use agent run locally. Reasoning uses your hosted LLM/VLM API; voice transcription uses local multilingual faster-whisper without an API key.
+This checkout targets the existing Apple M1 Mac with macOS 15 and 8 GB RAM. The dashboard, vault, document processing and Browser Use agent run locally. Reasoning uses your hosted LLM/VLM API.
 
 Already installed? Follow [startup.md](startup.md) for the short launch guide. The start script uses `.venv/bin/python` directly; activating the environment or running verification is not required to start the app.
 
@@ -57,26 +57,15 @@ Open **Settings** in the unlocked dashboard.
 
 The model must accept **Chat Completions, JSON object output and image inputs** for the screenshot workflow. A text-only model can be used only with visual checkpoints disabled. This project does not train or host an LLM, and a configured model is not a guarantee of successful automation on every website.
 
-Keys are encrypted locally and are never placed in the extension or frontend bundle. The model adapter sends sanitized text automatically unless you enable text review. Every request containing a screenshot waits for your approval. Unnecessary auxiliary model calls and unreviewed image retries are disabled. Optionally save a [Google AI Studio API key](https://aistudio.google.com/apikey) under **Optional fallback · Gemini**, with model `gemini-2.5-flash`. Remote tasks may switch once to the direct Gemini API after a primary-provider error (including exhausted OpenRouter credits). Image requests require fresh approval for Gemini. Without a fallback key, only OpenRouter is used.
+Keys are encrypted locally and are never placed in the extension or frontend bundle. The model adapter sends sanitized text automatically unless you enable text review. Screenshots with detected sensitive redactions require review; **Review every image instead** enables stricter review. Incomplete scans always require review. Unnecessary auxiliary model calls and unreviewed image retries are disabled. Optionally save a [Google AI Studio API key](https://aistudio.google.com/apikey) under **Optional fallback · Gemini**, with model `gemini-2.5-flash`. Remote tasks may switch once to the direct Gemini API after a primary-provider error (including exhausted OpenRouter credits). Image requests require fresh approval for Gemini. Without a fallback key, only OpenRouter is used.
 
 You can save up to 10 keys in each provider pool. The agent tries the next key on key-related or transient failures, then switches from OpenRouter to Gemini when needed. Blank rows keep the saved pool; entering keys replaces it. Use **Check saved keys** after saving to test every slot with a small synthetic JSON request before your demo. This consumes provider credits. A successful text check does not prove image support or full task success. Gemini keys in the same project share quota, and OpenRouter keys may share account credits.
 
 Gemini requests omit the unsupported `store` field. If a request still returns 400, the dashboard now classifies the error; generic malformed requests are not retried with every key. Check the Gemini model name (for example `gemini-2.5-flash`, without `google/`), key restrictions and Google AI Studio billing/project setup.
 
-## 5. Local English/Hindi voice input
+## 5. English/Hindi typed task input
 
-Setup installs multilingual Whisper small weights once. For an existing checkout, run:
-
-```sh
-uv sync
-.venv/bin/python scripts/speech_install.py
-```
-
-The initial public model download requires internet access. Transcription loads only local files, runs on the CPU, and never uploads recordings or requires an API key. The default model lives under the companion data directory in `models/whisper-small`; `GUARD_SPEECH_MODEL` can select a local compatible model directory. Old stored Whisper API keys are removed on unlock.
-
-Choose **Record task** (dashboard) or **Record voice task** (extension), grant microphone permission, speak in English or Hindi, and stop. Recordings are limited to 60 seconds and 10 MiB. Listen to the recording, choose **Transcribe locally**, and edit the returned text. In the extension, choose **Use transcript in task** to place it in the task draft. Start the task explicitly when the text and selected records are correct.
-
-Audio and drafts are kept in memory, are not automatically saved to the vault, and are discarded when their recording surface closes. Locking the vault cancels local recognition. If microphone permission is denied, check browser and macOS microphone permissions. Typed input remains available.
+Type or paste your task into the dashboard or extension, review it, then choose **Start task**.
 
 Use **Language / भाषा** to switch the dashboard or extension interface between English and Hindi. Both accept English, Hindi and mixed-language task input. The main agent receives a structured execution brief preserving the original request and the selected response language.
 
@@ -102,7 +91,7 @@ Use a **Remote** model for this flow. A real API key is required for live planni
 
 1. Open **New task → Prepare portal demo**. This adds synthetic name/email/phone records and selects only those records, leaving the document fields for the missing-information round.
 2. Use `http://127.0.0.1:8766/portal.html` as the starting website. The form does not have to be open beforehand.
-3. Enter or dictate: `Open this website and complete the application using my selected profile. Fill available details first, ask for missing documents, and stop before final submission.`
+3. Type: `Open this website and complete the application using my selected profile. Fill available details first, ask for missing documents, and stop before final submission.`
 4. Keep **Redacted images at every planning step** and **stop before final submission** enabled. Start the task.
 5. Follow the task activity. Approve reviewed navigation clicks if requested.
 6. At a screenshot checkpoint, review in the extension or dashboard. Compare the original local image with the actual redacted outgoing image. Drag rectangles or use the numeric controls to add masks, then apply them. Each edit replaces the approval.
@@ -129,7 +118,7 @@ The old planner cannot navigate the multi-step portal. Its optional image path r
 - **Pause:** cancels current work. Resume observes the current page before continuing.
 - **Waiting for information:** add/review facts, update the task's selected records, then Resume. It continues in the same tab.
 - **Stop:** ends the task and revokes further actions; it cannot undo an action already delivered to the site.
-- **Lock vault:** clears runtime access to credentials, records and image artifacts; cancels transcription and active browser work.
+- **Lock vault:** clears runtime access to credentials, records and image artifacts; cancels active browser work.
 - **Ctrl+C:** stops the companion and its controlled browser.
 
 After a service restart, pair and unlock again. Unfinished tasks remain stopped. If an action outcome is uncertain, inspect the website before starting another task; do not assume a timeout means nothing happened.
@@ -140,7 +129,7 @@ After a service restart, pair and unlock again. Unfinished tasks remain stopped.
 ./scripts/verify.sh
 ```
 
-The checks use synthetic data. Hosted model responses and most speech tests are mocked unless explicitly configured for a live run. See [docs/VALIDATION.md](docs/VALIDATION.md) for exact evidence and opt-in browser checks.
+The checks use synthetic data. Hosted model responses are mocked unless explicitly configured for a live run. See [docs/VALIDATION.md](docs/VALIDATION.md) for exact evidence and opt-in browser checks.
 
 After changing dashboard sources:
 
@@ -159,8 +148,6 @@ Refresh the dashboard. After extension source changes, use **Reload** on its `ch
 | Browser missing | Run `uv run scripts/browser_install.py` from the project directory. |
 | Current tab is not controllable | Use the dedicated Chromium, or provide a starting URL to create a controlled tab. |
 | Model returns an error | Check API credit, key, model ID, image support and Chat Completions JSON support. No action is authorized by a failed response. |
-| Local speech model is missing | Run `.venv/bin/python scripts/speech_install.py`, then refresh Settings. |
-| Local transcription error or empty transcript | Record a shorter command or type it. No browser task has started. |
 | Image approval changed | Reload the current preview and approve its newest version. Old approval IDs cannot authorize edited images. |
 | Screenshot geometry cannot be verified | Let the page settle, stop animations if possible, and retry from fresh state. No uncertain image is sent. |
 | Missing information repeats | Select the confirmed record in the task's available-information list before Resume; remove ambiguous duplicates from the selection. |
@@ -171,4 +158,4 @@ Refresh the dashboard. After extension source changes, use **Reload** on its `ch
 
 Advanced settings: `GUARD_DATA_DIR` chooses another local data directory; use the same value when installing the browser. `GUARD_BROWSER_EXECUTABLE` can select compatible Chromium. `GUARD_PORT` and `GUARD_DEMO_PORT` are backend overrides; changing ports also requires updating the extension's fixed localhost URLs/permissions.
 
-Keep the companion and debugging socket on loopback. No signed installer, Chrome Web Store distribution, Firefox support, local vision model or local speech model is included in this version.
+Keep the companion and debugging socket on loopback. No signed installer, Chrome Web Store distribution, Firefox support, local vision model is included in this version.

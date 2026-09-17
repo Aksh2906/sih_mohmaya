@@ -15,7 +15,6 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
-from .audio import MAX_AUDIO_BYTES, LocalTranscriber, audio_format
 from .config import DATA_DIR, DEMO_PORT, PORT, ROOT, migrate_provider_settings
 from .diagnostics import logger, request_id
 from .documents import calculate_total, extract_document
@@ -44,7 +43,6 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
 
         browser = BrowserDriver(data_dir, ROOT / "apps/extension")
     gateway = ModelGateway()
-    transcriber = LocalTranscriber()
     manager = TaskManager(vault, browser, gateway, DEMO_PORT, PORT)
     sessions = {}
     code = pairing_code or secrets.token_urlsafe(12)
@@ -72,7 +70,6 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
                 try:
                     await browser.shutdown()
                 finally:
-                    transcriber.clear()
                     vault.lock()
 
     app = FastAPI(
@@ -89,10 +86,9 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
         gateway,
         browser,
     )
-    app.state.transcriber = transcriber
 
     def provider_settings():
-        return {**gateway.settings(), "speech_ready": transcriber.configured, "speech_provider": "local"}
+        return gateway.settings()
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
@@ -162,7 +158,7 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; "
+            "img-src 'self' data:; media-src 'none'; connect-src 'self'; font-src 'self'; "
             "object-src 'none'; frame-ancestors 'none'"
         )
         return response
@@ -281,7 +277,6 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
         manager.persist()
         gateway.api_key = ""
         gateway.fallback_api_key = ""
-        transcriber.clear()
         if hasattr(gateway, "image_store"):
             gateway.image_store.clear()
         gateway.sent.clear()
@@ -293,24 +288,6 @@ def create_app(data_dir: Path = DATA_DIR, browser=None, pairing_code=None, testi
     def require_unlock():
         if not vault.unlocked:
             raise PermissionError
-
-    @app.post("/api/v1/audio/transcribe")
-    async def transcribe_audio(request: Request):
-        require_unlock()
-        content_type = request.headers.get("content-type", "")
-        audio_format(content_type)
-        recording = bytearray()
-        async for chunk in request.stream():
-            recording.extend(chunk)
-            if len(recording) > MAX_AUDIO_BYTES:
-                raise HTTPException(413, "Recording exceeds 10 MiB; record a shorter command")
-        require_unlock()
-        try:
-            result = await transcriber.transcribe(bytes(recording), content_type)
-        finally:
-            recording.clear()
-        require_unlock()
-        return result
 
     @app.get("/api/v1/records")
     async def records():

@@ -17,7 +17,6 @@ from .diagnostics import logger, traced
 from .gateway import canonical, digest, validate_endpoint
 from .privacy import _safe_url, contains_private_text, sanitize_text
 from .provider_errors import classify_error, completion_options
-from .review_classifier import requires_review
 
 SCHEMA_INSTRUCTION = "Return exactly one JSON object satisfying this schema. No markdown. "
 SCREENSHOT_INSTRUCTION = (
@@ -72,9 +71,6 @@ class GuardedChatModel:
     @property
     def name(self):
         return self.model
-
-    async def requires_review(self, kind, candidate, private, artifact=None):
-        return await requires_review(self, kind, candidate, private, artifact)
 
     @property
     def model_name(self):
@@ -331,7 +327,12 @@ class GuardedChatModel:
                        **completion_options(self.base_url)}
             self.check(payload, private + self.runtime.private())
             self.runtime.task["request"] = payload
-            await self.runtime.review_text_if_needed(payload, private, "Review sanitized text for Gemini fallback")
+            if self.runtime.task.get("_review_text"):
+                await self.runtime.manager.approval(
+                    self.runtime.task, self.runtime.generation, "model",
+                    "Review sanitized text for Gemini fallback",
+                    {"destination": self.base_url, "sha256": digest(payload), "request": payload},
+                )
         self.runtime.task["status"] = "reasoning"
         return await self.send(payload, digest(payload), private, artifact)
 
@@ -368,7 +369,11 @@ class GuardedChatModel:
                 artifact = None
                 payload = self.prepare(messages, output_format, private)
                 self.runtime.task["request"] = payload
-                await self.runtime.review_text_if_needed(payload, private, "Review sanitized text context")
+                if self.runtime.task.get("_review_text"):
+                    await self.runtime.manager.approval(
+                        self.runtime.task, self.runtime.generation, "model", "Review sanitized text context",
+                        {"destination": self.base_url, "sha256": digest(payload), "request": payload},
+                    )
             self.runtime.task["status"] = "reasoning"
             result = await self.send(payload, digest(payload), private, artifact)
         finally:

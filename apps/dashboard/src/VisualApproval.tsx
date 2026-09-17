@@ -110,14 +110,14 @@ export function VisualApproval({ task, busy, act }: Props) {
         </span>
         <div>
           <span className="eyebrow">
-            {t("SCREENSHOT REVIEW")}
+            {t("VISUAL CHECKPOINT · BEFORE IMAGE TRANSMISSION")}
           </span>
           <h2>{t(task.pending?.title || "Review the redacted screenshot")}</h2>
         </div>
       </div>
       <p>
         {t(
-          "Review this screenshot before the task continues. Check the whole image and cover any private information that remains visible. The original stays on this device.",
+          "Only the approved redacted image will be sent for model reasoning. Check the whole image and cover any sensitive content the detector missed. The original stays on this device.",
         )}
       </p>
       {loading && (
@@ -228,7 +228,7 @@ export function VisualApproval({ task, busy, act }: Props) {
                     );
                   }}
                   alt={t(
-                    "Redacted screenshot for the next task step",
+                    "Redacted browser screenshot that will be sent after approval",
                   )}
                 />
                 {[...masks, ...(drag ? [drag] : [])].map((mask, index) => (

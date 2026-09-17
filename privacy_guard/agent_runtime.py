@@ -1,4 +1,4 @@
-"""Browser Use-powered supervised agent; private values remain in local tools."""
+
 
 import asyncio
 import json
@@ -549,6 +549,14 @@ class BrowserAgentRuntime:
                 action.update(option_index=option_index, _approved=True)
             else:
                 label = field.get("label", "")
+                consequence = bool(
+                    field.get("is_submit")
+                    or re.search(
+                        r"\b(submit|pay|purchase|buy|send|delete|remove|sign|file return|confirm filing|transfer)\b",
+                        label,
+                        re.I,
+                    )
+                )
                 # Even a submit-type Next button needs review, but a final
                 # submission is never executed with the default task policy.
                 final_submit = bool(
@@ -566,14 +574,7 @@ class BrowserAgentRuntime:
                     return ActionResult(
                         error="Final submission/action is withheld. Complete fields and call done for user review."
                     )
-                candidate = clean_strings({
-                    "action": "click", "index": field["index"],
-                    "control": label, "href": field.get("href"), "is_submit": field.get("is_submit", False),
-                    "destination": _origin(self.raw["url"]), "context": self.model_observation(),
-                }, private)
-                needs_review = (final_submit or bool(re.search(r"\bremove\b", label, re.I))
-                                or await self.llm.requires_review("action", candidate, private))
-                if needs_review:
+                if consequence or field.get("tag") not in ("a",):
                     await self.manager.approval(
                         self.task,
                         self.generation,
@@ -694,12 +695,14 @@ class BrowserAgentRuntime:
 
     async def handoff_login_if_needed(self):
         await self.observe_for_model()
-        if not is_login_form(self.raw):
+        login = is_login_form(self.raw)
+        challenge = authentication_barrier(self.raw)
+        if not login and not (self.task.get("_human_resume") and challenge in {"otp", "captcha"}):
             return False
         message = ("वेबसाइट पर कैप्चा और ओटीपी सहित लॉगिन के बचे हुए चरण पूरे करें।"
                    if self.task.get("language") == "hi" else
                    "Complete the remaining login steps, including CAPTCHA and OTP, directly on the website.")
-        await self.request_human_action("login", message)
+        await self.request_human_action("login" if login else challenge, message)
         return True
 
     async def request_human_action(self, kind, message):
@@ -709,6 +712,8 @@ class BrowserAgentRuntime:
             # and the same selected-reference checks before handing the browser over.
             await self.observe_for_model()
             report = await self.fill_login_details()
+        auto_resume = bool(kind == "login" or is_login_form(self.raw or {})
+                           or (kind in {"otp", "captcha"} and self.task.get("_human_resume", {}).get("auto_resume")))
         safe = sanitize_text(message, self.private())[:1000]
         hindi = self.task.get("language") == "hi"
         if report is not None:
@@ -721,8 +726,11 @@ class BrowserAgentRuntime:
                 notices.append("पेज ने हर फ़ील्ड के भरने की पुष्टि नहीं की। जारी रखने से पहले फ़ील्ड जाँचें।" if hindi else "The page did not confirm every attempted field fill. Check the fields before continuing.")
             safe = " ".join(notices + [safe])
         instruction = safe + (" नियंत्रित ब्राउज़र में चरण पूरा करके 'मैंने पूरा कर लिया — जारी रखें' चुनें। ओटीपी और कैप्चा केवल वेबसाइट पर दर्ज करें। दोबारा उपयोग होने वाली जानकारी केवल स्थानीय वॉल्ट में रखें।" if hindi else " Complete the step in the controlled browser, then choose 'I've finished — continue'. Enter OTPs and CAPTCHA answers only on the website. Store reusable credentials only in the local vault.")
+        if auto_resume:
+            instruction = safe + (" कैप्चा और ओटीपी वेबसाइट पर स्वयं भरें। लॉगिन पूरा होने का पता चलने पर एजेंट अपने आप जारी रहेगा। ज़रूरत पड़ने पर 'मैंने पूरा कर लिया — जारी रखें' चुनें।" if hindi else " Enter OTPs and CAPTCHA answers only on the website. The agent will continue automatically when the login form and challenges clear. If needed, choose 'I've finished — continue'.")
         self.waiting_input(instruction)
-        self.task["human_action"] = {"kind": kind, "message": safe, "target_id": self.task.get("target_id")}
+        self.task["human_action"] = {"kind": kind, "message": safe, "target_id": self.task.get("target_id"),
+                                     "auto_resume": auto_resume}
         self.manager.persist()
 
     def update_plan(self, plan):
@@ -803,7 +811,9 @@ class BrowserAgentRuntime:
                 artifact = None
                 payload = self.llm.prepare(messages, CompletionCheck, private)
                 self.task["request"] = payload
-                await self.review_text_if_needed(payload, private, "Review task completion check")
+                if self.task.get("_review_text"):
+                    await self.manager.approval(self.task, self.generation, "model", "Review task completion check",
+                                                {"destination": self.llm.base_url, "sha256": digest(payload), "request": payload})
             result = CompletionCheck.model_validate(await self.llm.send(payload, digest(payload), private, artifact))
         finally:
             self.image_state = None
@@ -947,14 +957,6 @@ class BrowserAgentRuntime:
     async def review_image_if_needed(self, title="Review the redacted screenshot before sending"):
         state = self.image_state
         decision = image_review_decision(state["artifact"]["mask_report"], self.task.get("_image_review", "sensitive"))
-        mandatory = (state.get("force_review") or state["artifact"]["mask_report"].get("requires_manual_review")
-                     or self.task.get("_image_review") == "always")
-        if not mandatory:
-            receipt = state["hash"]
-            required = await self.llm.requires_review("payload", state["payload"], state["private"], state["artifact"])
-            if state is not self.image_state or receipt != digest(state["payload"]):
-                raise ValueError("Screenshot request changed during its safety check")
-            decision.update(required=required, reason="This image needs your review." if required else "Ready to continue.")
         if state.get("force_review"):
             decision.update(required=True, reason="Planning stalled; a reviewed screenshot is needed.")
             title = "Agent needs help — review the screenshot to continue"
@@ -965,16 +967,7 @@ class BrowserAgentRuntime:
             await self.manager.approval(self.task, self.generation, "image", title, self._image_payload())
             state["reviewed_hash"] = state["hash"]
         else:
-            self.manager.event(self.task, "Screenshot and page text are ready. Continuing.")
-
-    async def review_text_if_needed(self, payload, private, title="Review the next step"):
-        receipt = digest(payload)
-        required = self.task.get("_review_text") or await self.llm.requires_review("payload", payload, private)
-        if digest(payload) != receipt:
-            raise ValueError("Text request changed during its safety check")
-        if required:
-            await self.manager.approval(self.task, self.generation, "model", title,
-                                        {"destination": self.llm.base_url, "sha256": receipt, "request": payload})
+            self.manager.event(self.task, "Redacted screenshot and page text prepared automatically; no sensitive redactions detected.")
 
     def _prepare_image_payload(self):
         state = self.image_state
@@ -1042,7 +1035,11 @@ class BrowserAgentRuntime:
                 {"role": "user", "content": self.task["_goal"]},
             ], WebsiteSelection, private)
             self.task["request"] = payload
-            await self.review_text_if_needed(payload, private, "Review website selection request")
+            if self.task.get("_review_text"):
+                await self.manager.approval(
+                    self.task, self.generation, "model", "Review website selection request",
+                    {"destination": self.llm.base_url, "sha256": digest(payload), "request": payload},
+                )
             self.task["status"] = "reasoning"
             result = await self.llm.send(payload, digest(payload), private)
             url = validate_website_url(result, self.private())

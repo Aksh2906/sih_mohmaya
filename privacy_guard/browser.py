@@ -116,14 +116,16 @@ _OBSERVE_JS = "function() {" + CURSOR_INSTALL_JS + r"""
     const r = e.getBoundingClientRect();
     const labelled = (e.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => e.getRootNode().getElementById(id)?.textContent || '').join(' ');
     let label = clean(e.labels?.length ? [...e.labels].map(x => x.textContent).join(' ') : labelled || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.textContent);
-    // UIDAI's OTP login uses an unlabelled name="uid" control. Keep this
-    // adapter scoped to its HTTPS login document; "uid" elsewhere is not
-    // evidence that a field accepts Aadhaar. Explicit labels always win.
-    const owner = e.ownerDocument;
-    if (!label && e.matches('input[name="uid"]') && ['text','tel','number'].includes(e.type) &&
-        owner.location.origin === 'https://tathya.uidai.gov.in' &&
-        /\baadhaar\b/i.test(owner.title) && /\blogin\b/i.test(owner.title))
-      label = 'Aadhaar number';
+    // Some Aadhaar forms use a floating span instead of an associated label.
+    // Require a single control and one explicit, visible adjacent Aadhaar label;
+    // an internal name such as "uid" alone never identifies an Aadhaar field.
+    if (!label && e.matches('input') && ['text','tel','number'].includes(e.type) &&
+        e.parentElement?.querySelectorAll('input,textarea,select').length === 1) {
+      const adjacent = [...e.parentElement.children].filter(node =>
+        node !== e && node.matches('span,label') && visible(node) &&
+        /^(?:(?:enter|your)\s+)*(?:aadhaar|aadhar)\s*(?:number|no\.?)?\s*[:*]?$/i.test(clean(node.textContent)));
+      if (adjacent.length === 1) label = clean(adjacent[0].textContent);
+    }
     label ||= clean(e.name || e.id);
     const tag = e.tagName.toLowerCase();
     const index = s.nodes.push(e);
@@ -142,7 +144,7 @@ _OBSERVE_JS = "function() {" + CURSOR_INSTALL_JS + r"""
   }
   s.url = location.href;
   s.epoch = `${s.nonce}:${s.revision}:${s.serial}`;
-  return {url:s.url,title:document.title,epoch:s.epoch,fields,
+  return {url:s.url,title:document.title,ready_state:document.readyState,epoch:s.epoch,fields,
     text:texts.join('\n').slice(0,100000),
     width:innerWidth,height:innerHeight,device_scale_factor:devicePixelRatio,
     unsupported_frames, unsupported_components:false,

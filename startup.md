@@ -66,10 +66,6 @@ Choose **New task**, select **Remote**, and describe what to doâ€”for example, â
 
 Watch the blue **Agent** cursor move before clicks, field entry, dropdown selections and scrolling. Destination changes and sensitive actions still use the existing review flow, and final submission stays withheld by default. In the extension, **Use the current tab instead of finding a website** binds the task to the current page. Reload the extension after updating its files.
 
-## Optional voice input
-
-Run `.venv/bin/python scripts/speech_install.py` once if the local speech model is missing. Record in English or Hindi, stop, then choose **Transcribe locally**. Audio stays on this machine; no API key is needed. Review the editable transcript before explicitly starting a task. In the extension, choose **Use transcript in task** to update the draft.
-
 ## Login and other browser handoffs
 
 When a service needs login, OTP, CAPTCHA or a manual action, the task waits for you

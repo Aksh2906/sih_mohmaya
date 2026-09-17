@@ -626,22 +626,6 @@ footer {
 #resume-information label {
   margin-top: 8px;
 }
-.voice-launch {
-  margin: 12px 0;
-  padding: 12px;
-  border: 1px solid #3b5147;
-  border-radius: 6px;
-}
-.voice-launch .button {
-  width: 100%;
-}
-.voice-launch small {
-  display: block;
-  margin-top: 9px;
-  color: #a4bbae;
-  font-size: 9px;
-  line-height: 1.7;
-}
 .check-option {
   display: flex;
   gap: 9px;
@@ -691,10 +675,6 @@ footer {
 #image-review {
   margin-top: 15px;
   font-size: 10px;
-}
-#transcript-note {
-  color: #abdcc3;
-  margin-top: 10px;
 }
 .result.needs-input {
   border-color: #6c674b;
